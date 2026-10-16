@@ -44,7 +44,8 @@ slurm-*.out
 secrets.toml
 .secrets/
 
-# Editors / OS
+# Editors / OS / local tool settings
+.claude/settings.local.json
 .idea/
 .vscode/
 .DS_Store
