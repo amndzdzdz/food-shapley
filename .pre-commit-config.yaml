@@ -1,0 +1,45 @@
+# Checks mirror .github/workflows/ci.yml exactly; the commands live in one place
+# only (this file and CI both call the same uv-run invocations).
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Keep this rev in sync with the ruff version pinned in uv.lock.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # mypy and pytest run through uv against the project environment, so they see
+  # exactly the dependencies declared in uv.lock rather than an isolated
+  # pre-commit virtualenv with a second, drifting set of pins.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run --frozen mypy
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
+
+      - id: pytest
+        name: pytest (excluding slow tests)
+        entry: uv run --frozen pytest -q -m "not slow and not gpu"
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true

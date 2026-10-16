@@ -1,0 +1,122 @@
+[project]
+name = "food-shapley"
+version = "0.1.0"
+description = "Exact Shapley values and interactions over food-ingredient segments to study compositional vision-language recognition"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# Runtime dependencies are intentionally empty at initialization time.
+# The research stack (shapiq, torch, open_clip/transformers, datasets) is added
+# in Week 1, when the first code that actually imports it is written.
+# See docs/week-01.md.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18",
+    "pre-commit>=4.0",
+    "pytest>=8.3",
+    "ruff>=0.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/food_shapley"]
+
+[tool.uv]
+package = true
+
+# --------------------------------------------------------------------------- #
+# pytest
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = []
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+markers = [
+    "integration: exercises several components together; slower, may touch the filesystem",
+    "slow: takes more than a few seconds; excluded from the pre-commit hook",
+    "gpu: requires a GPU / cluster node; never run in CI",
+]
+filterwarnings = ["error"]
+
+# --------------------------------------------------------------------------- #
+# Ruff (linter + formatter)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (undefined names, unused imports)
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "RET",  # flake8-return
+    "PTH",  # prefer pathlib
+    "ARG",  # unused arguments
+    "TID",  # tidy imports
+    "NPY",  # numpy-specific rules
+    "PD",   # pandas-specific rules
+    "RUF",  # ruff-specific rules
+    "ANN",  # type annotations
+    "D",    # pydocstyle
+    "S",    # flake8-bandit (security)
+    "PT",   # flake8-pytest-style
+    "N",    # pep8-naming
+]
+ignore = [
+    "D104",  # missing docstring in public package
+    "D107",  # missing docstring in __init__ (documented at class level)
+    "D203",  # incompatible with D211
+    "D213",  # incompatible with D212
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",  # asserts are the point of a test
+    "D100",  # module docstrings not required for tests
+    "D103",  # test function docstrings not required
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# --------------------------------------------------------------------------- #
+# mypy (strict)
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+warn_unused_configs = true
+disallow_any_unimported = true
+disallow_any_explicit = false  # narrow, documented Any is allowed at JSON boundaries
+no_implicit_reexport = true
+pretty = true
+
+# Untyped third-party packages are opted out here, one at a time, with a reason.
+# Example:
+# [[tool.mypy.overrides]]
+# module = ["shapiq.*"]
+# ignore_missing_imports = true

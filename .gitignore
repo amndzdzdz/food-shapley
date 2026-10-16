@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+.envrc
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Datasets and generated artifacts (see src/food_shapley/paths.py)
+data/
+runs/
+outputs/
+wandb/
+
+# Large / binary research artifacts, wherever they end up
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.h5
+*.parquet
+
+# Cluster job output
+slurm-*.out
+*.sbatch.log
+
+# Credentials — never commit these
+*.pem
+*.key
+secrets.toml
+.secrets/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

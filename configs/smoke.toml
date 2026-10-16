@@ -1,0 +1,12 @@
+# Smallest runnable configuration; used to verify the pipeline end-to-end
+# (PLAN.md Milestone 1, Step 0: "submit one toy SLURM job end-to-end").
+# Fields are added to this file as ExperimentConfig grows.
+
+name = "smoke"
+seed = 0
+dataset = "foodseg103"
+split = "test"
+model = "openclip/ViT-B-32"
+removal = "blur"
+max_players = 7
+notes = "Toy configuration for infrastructure checks, not for reported results."
