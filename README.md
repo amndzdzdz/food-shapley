@@ -74,7 +74,8 @@ runs/                   Generated artifacts — git-ignored, one dir per run
 
 ## Prerequisites
 
-- Python >= 3.11
+- Python >= 3.11 — the exact version is pinned in `.python-version` (3.11) and
+  `uv` installs it for you, so local and CI environments cannot drift
 - [`uv`](https://docs.astral.sh/uv/) for environments, dependencies and locking
 - For the actual experiments (not yet implemented): access to a SLURM cluster
   with GPUs, plus the FoodSeg103 dataset — see [`docs/datasets.md`](docs/datasets.md)

@@ -10,10 +10,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Keep in sync with requires-python in pyproject.toml.
-  PYTHON_VERSION: "3.11"
-
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -25,8 +21,9 @@ jobs:
         with:
           enable-cache: true
 
+      # Version comes from .python-version, so CI and local environments cannot drift.
       - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
+        run: uv python install
 
       - name: Install dependencies from the lockfile
         run: uv sync --frozen --all-groups
