@@ -3,8 +3,8 @@
 Plan: [docs/week-01.md](../docs/week-01.md) · Entry format:
 [insights/README.md](README.md)
 
-**Two entries, both about the input data. No experiment has been run and no
-model has been evaluated.**
+**Three entries, all about the input data. No experiment has been run and no
+model has been evaluated.** W01-03 partially contradicts W01-02; read both.
 
 ## Questions this week's entries should answer
 
@@ -30,10 +30,114 @@ check is one of the most valuable entries this week can contain.
 
 ---
 
+## W01-03 — The mirror does ship an ingredient-name list after all; label 0 is background
+
+- **Date:** 2026-10-17
+- **Status:** validated
+- **Plan reference:** docs/week-01.md, task 1.2 and 1.3
+- **Run / artifact:** `id2label.json` at
+  `EduardoPacheco/FoodSeg103@34e1208e14bc…`, sha256
+  `b6b6458cd2b259a47374f8ad5cf331528caf8764eb50397b2c1e2bb2fa7a0a50`
+- **Corrects:** [W01-02](#w01-02--classes_on_image-includes-background-and-no-ingredient-names-ship-with-the-mirror)
+
+### Observation
+
+The mirror repository contains a top-level `id2label.json` (1,823 bytes, blob
+`82cb3539`). It holds **104 entries, ids 0–103, contiguous, no gaps**. Spot
+checks:
+
+| id | name |
+|---|---|
+| 0 | `background` |
+| 20 | `dried cranberries` |
+| 56 | `shrimp` |
+| 66 | `rice` |
+| 84 | `carrot` |
+| 96 | `French beans` |
+| 103 | `other ingredients` |
+
+`datasets.load_dataset` does not fetch this file — it reads only the parquet
+shards listed in the card's `configs` block — which is why inspecting the
+loaded `Dataset.features` (as W01-02 did) showed no mapping.
+
+### Context and motivation
+
+W01-02 concluded that the ingredient names were unavailable and that this
+blocked tasks 1.2 and 1.3. Before acting on that, I listed the repository's
+files through the Hub API rather than only the loaded dataset object. The
+conclusion was wrong: I had inferred "absent from the repository" from "absent
+from `Dataset.features`".
+
+### Setup
+
+```bash
+curl -sSL "https://huggingface.co/datasets/EduardoPacheco/FoodSeg103/resolve/\
+34e1208e14bc3595d544fc8c3f3c6673253fd9ef/id2label.json"
+```
+
+The `-L` matters: without it the Hub returns a 307 whose body is the redirect
+notice, which parses as "not JSON" rather than as a failure.
+
+### Evidence
+
+- Hub tree listing at the pinned revision shows `id2label.json`, blob
+  `82cb3539e971ed1fbde2d9f3464271bd3a92d497`.
+- 104 entries, keys exactly `range(104)`, verified programmatically.
+- Example 0's mask ids `[0, 20, 56, 66, 84, 96]` resolve to background, dried
+  cranberries, shrimp, rice, carrot, French beans — a coherent dish, which is
+  independent corroboration that the mapping aligns with the mask ids rather
+  than being some other ordering.
+
+### Interpretation
+
+*Interpretation, not measurement:*
+
+- **Label 0 is literally named `background`.** The `PLAN.md` warning is now
+  confirmed by the data, not just asserted; the planned exclusion test is
+  grounded.
+- **Id 103 is `other ingredients`** — a catch-all that already exists in the
+  annotations. This collides conceptually with the "rest" player task 1.2 is
+  meant to create by merging small segments. Two different notions of "other"
+  in one player set would be confusing at best and double-counted at worst.
+- The names are human-readable and mostly prompt-ready (`French beans`,
+  `dried cranberries`), so task 1.3's prompt construction is unblocked.
+
+### Limitations and alternative explanations
+
+- This is the **mirror's** `id2label.json`, not the official `category_id.txt`,
+  which is still unreachable (W01-01). The ordering has not been checked
+  against the FoodSeg103 paper. The coherent dish in example 0 is evidence
+  that it is right, not proof.
+- 104 names for "103 food categories" is consistent with 103 ingredients plus
+  background, but I have not confirmed that reading against the paper.
+- The file is not currently downloaded or hashed by `food_shapley.download`,
+  so it is not yet covered by the manifest.
+
+### Implications
+
+- Tasks 1.2 and 1.3 are **not** blocked. W01-02's "blocker" framing was wrong.
+- `download.py` should fetch `id2label.json` alongside the split and include
+  it in the manifest hash, so the names are pinned to the same revision as the
+  pixels.
+- Task 1.2 must decide explicitly what to do about id 103 `other ingredients`
+  versus the merged "rest" player, and record the decision.
+
+### Follow-up questions and next steps
+
+1. Add `id2label.json` to the download and the manifest.
+2. Decide and document the id-103 / "rest" question before building players.
+3. Still worth comparing against the official `category_id.txt` if the zip
+   ever returns.
+
+---
+
 ## W01-02 — `classes_on_image` includes background, and no ingredient names ship with the mirror
 
 - **Date:** 2026-10-17
-- **Status:** validated (direct inspection of the downloaded split)
+- **Status:** **partially contradicted** by [W01-03](#w01-03--the-mirror-does-ship-an-ingredient-name-list-after-all-label-0-is-background).
+  The `classes_on_image` finding stands. The claim that no name mapping ships
+  with the mirror is **wrong**: `id2label.json` exists in the repository, it is
+  simply not exposed through `load_dataset`. Original text left intact below.
 - **Plan reference:** docs/week-01.md, task 1.2; risk "Label 0 is background,
   not a player"
 - **Run / artifact:** `data/raw/foodseg103/test/` ·

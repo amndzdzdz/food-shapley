@@ -64,14 +64,20 @@ Still to confirm in Week 1:
   count at `max_players` (see `configs/`). The merge threshold is a
   configuration value, not a hidden constant, and the number of images affected
   must be recorded.
-- **The mirror carries no label-id → ingredient-name mapping.** Its features
-  are `image: Image`, `label: Image`, `classes_on_image: List(int64)`,
-  `id: int64` — the mask is stored as an image, not as a `ClassLabel`, so the
-  names are absent. `PLAN.md` step 1 needs those names (an ingredient called
-  "class 56" is not interpretable in a paper). The official release ships them
-  in `category_id.txt`, which is inside the zip that currently 502s. Resolve
-  this before step 1: either recover the file, or source the list from the
-  dataset card and record here where it came from.
+- **The loaded dataset carries no label names, but the repository does.** The
+  features are `image: Image`, `label: Image`, `classes_on_image: List(int64)`,
+  `id: int64` — the mask is an image, not a `ClassLabel`. The names live in a
+  separate top-level `id2label.json` that `load_dataset` does not fetch:
+  **104 entries, ids 0–103, contiguous**, sha256
+  `b6b6458cd2b259a47374f8ad5cf331528caf8764eb50397b2c1e2bb2fa7a0a50` at the
+  pinned revision. Id 0 is literally `background`; id 103 is
+  `other ingredients`. See insight W01-03.
+- **Id 103 `other ingredients` already exists in the annotations.** Task 1.2's
+  plan to merge small segments into a "rest" player creates a second,
+  different notion of "other". Decide and document how the two relate before
+  building the player set.
+- `id2label.json` is **not yet downloaded or covered by the manifest hash**.
+  It should be, so the names are pinned to the same revision as the pixels.
 
 ## Food-101 class names
 
