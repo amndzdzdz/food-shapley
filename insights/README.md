@@ -11,7 +11,7 @@ entries so far concern the input data.
 
 | File | Corresponding plan | Entries |
 |---|---|---|
-| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | W01-01 (FoodSeg103 source), W01-02 (background label; *partially contradicted*), W01-03 (ingredient names exist) |
+| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | W01-01 (FoodSeg103 source), W01-02 (background label; *partially contradicted*), W01-03 (ingredient names exist), W01-04 (≤ 10 ingredients/image) |
 | [week-02.md](week-02.md) | [docs/week-02.md](../docs/week-02.md) | none yet |
 | [week-03.md](week-03.md) | [docs/week-03.md](../docs/week-03.md) | none yet |
 | [week-04.md](week-04.md) | [docs/week-04.md](../docs/week-04.md) | none yet |

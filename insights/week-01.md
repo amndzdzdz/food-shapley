@@ -3,7 +3,7 @@
 Plan: [docs/week-01.md](../docs/week-01.md) · Entry format:
 [insights/README.md](README.md)
 
-**Three entries, all about the input data. No experiment has been run and no
+**Four entries, all about the input data. No experiment has been run and no
 model has been evaluated.** W01-03 partially contradicts W01-02; read both.
 
 ## Questions this week's entries should answer
@@ -22,11 +22,108 @@ Derived from the Week 1 plan; each needs a dated entry once evidence exists.
 - Is the log-probability value function sensible on obvious unmasked images?
   What exactly was checked, and what was the outcome?
 - How many images exceeded `max_players` and had segments merged into "rest"?
+  **Answered in advance by W01-04: zero, at `max_players = 10`.** The run must
+  still report the figure it actually observed.
 - What fraction of the test split produced usable output, and why did the rest
   fail?
 
 Record failures and surprises here as readily as successes — a failed masking
 check is one of the most valuable entries this week can contain.
+
+---
+
+## W01-04 — No test image has more than 10 ingredients, so exact Shapley needs no segment merging
+
+- **Date:** 2026-10-17
+- **Status:** validated (exhaustive over the test split)
+- **Plan reference:** docs/week-01.md, task 1.2; risk "Images with too many
+  segments make exact computation expensive"; `PLAN.md` steps 3 and 5
+- **Run / artifact:** `data/raw/foodseg103/test/`, manifest
+  `3fc784f31a1c…`
+
+### Observation
+
+Ingredient counts over **all 2,135 test images**, taking
+`set(classes_on_image) - {0}` (background excluded per W01-03):
+
+| ingredients | images | cumulative |
+|---|---|---|
+| 1 | 5 | 0.2 % |
+| 2 | 500 | 23.7 % |
+| 3 | 658 | 54.5 % |
+| 4 | 452 | 75.6 % |
+| 5 | 323 | 90.8 % |
+| 6 | 116 | 96.2 % |
+| 7 | 55 | 98.8 % |
+| 8 | 21 | 99.8 % |
+| 9 | 4 | 100.0 % |
+| 10 | 1 | 100.0 % |
+
+**The maximum is 10. The median is 3.** Images capped at a given
+`max_players`: 7 → 26 images (1.2 %), 8 → 5 (0.2 %), 9 → 1, **10 → 0**.
+
+Summing 2^k over the split gives **≈ 47,800 coalitions for the entire test
+split** at `max_players = 10`, i.e. with no merging at all.
+
+### Context and motivation
+
+`configs/smoke.toml` carries `max_players = 7`, and `PLAN.md` estimates "~128
+coalitions per image", which is 2^7. Before implementing the merge-into-rest
+logic I checked what the data actually requires.
+
+### Setup
+
+Deterministic read of the `classes_on_image` column for all 2,135 rows. No
+mask decoding, no model, no randomness.
+
+### Interpretation
+
+*Interpretation, not measurement:*
+
+- The "~128 coalitions per image" figure in `PLAN.md` looks like a worst-case
+  estimate being treated as typical. The mean is ~22 coalitions per image;
+  128 is the 99th percentile, not the middle.
+- **Segment merging is not needed to make exact computation affordable.** At
+  `max_players = 10` nothing is capped and the whole split is ~47,800 CLIP
+  forward passes — minutes of GPU time, not a cluster-scale job. The risk row
+  "images with too many segments make exact computation expensive" does not
+  materialise on this split.
+- That removes a confound rather than just saving time. Every merged image
+  would have carried an artificial "rest" player whose Shapley value means
+  something different from an ingredient's, and any claim about interaction
+  structure would have needed a caveat for 1.2 % of the data.
+- There may still be a *non*-compute reason to merge: a segment of 50 pixels
+  is arguably not a visible ingredient, and blurring it may be a no-op. That
+  is an area threshold, a different parameter from `max_players`, and it
+  should be justified on visibility grounds rather than cost.
+
+### Limitations and alternative explanations
+
+- Test split only. The train split (4,983 images) has not been measured and
+  may have a longer tail; it is not used for the Milestone 1 run.
+- This counts **distinct label ids**, not connected components. One `carrot`
+  id may cover several disjoint blobs. If players are later defined per
+  connected component rather than per ingredient class, these counts are a
+  lower bound and the conclusion must be rechecked.
+- The forward-pass estimate ignores preprocessing and blurring cost, which
+  may well dominate the model itself.
+
+### Implications
+
+- Set `max_players = 10` for the real Week-1 config, not 7, and record in the
+  run that zero images were capped — a stronger statement than "few were".
+- Still implement the cap and the "rest" player: it is a guard for other
+  splits and other datasets, and `PLAN.md` asks for the count of capped
+  images to be recorded. It should simply never fire on this split.
+- Task 1.6's "scale out" is an orchestration exercise, as `PLAN.md` says, not
+  a compute-bound one. Worth confirming once the real per-image cost is known.
+
+### Follow-up questions and next steps
+
+1. Add a non-smoke `configs/` entry with `max_players = 10`.
+2. Decide players-per-class vs players-per-connected-component before 1.2;
+   it changes these numbers.
+3. Measure the train split if Milestone 2 needs it.
 
 ---
 
