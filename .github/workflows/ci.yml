@@ -39,3 +39,7 @@ jobs:
 
       - name: pytest
         run: uv run --frozen pytest -m "not gpu"
+
+      # The SLURM scripts can never run in CI, so lint them at least.
+      - name: shellcheck (SLURM scripts)
+        run: shellcheck --shell=bash slurm/*.sh slurm/*.slurm

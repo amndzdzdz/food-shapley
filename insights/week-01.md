@@ -9,6 +9,10 @@ Plan: [docs/week-01.md](../docs/week-01.md) · Entry format:
 
 Derived from the Week 1 plan; each needs a dated entry once evidence exists.
 
+- Did the toy SLURM job and array run on the cluster as written? Which
+  assumptions in `slurm/README.md` turned out to be wrong — partition,
+  walltime, `uv run --no-sync` on an offline node, scratch paths? This is the
+  first thing to record, because every later run inherits these settings.
 - Does the efficiency check (`sum(SV) == v(N) − v(∅)`) hold, and at what
   numerical tolerance?
 - Does the visual check confirm that masked coalitions show what they claim to?

@@ -33,8 +33,40 @@ publication-quality results on the basis of its infrastructure.
 ## Current state
 
 Infrastructure only. `src/food_shapley/` contains configuration, seeding,
-artifact layout, and run provenance. **No research code, no experiments, no
-results.** The pipeline described in `PLAN.md` starts in Week 1.
+artifact layout, run provenance, and a SLURM self-test (`selftest.py`, which
+exercises the array mechanics without a dataset or a model). **No research
+code, no experiments, no results.** The pipeline described in `PLAN.md` starts
+in Week 1.
+
+The scripts in `slurm/` have been simulated locally and pass shellcheck, but
+**have never been submitted to a cluster**. Do not describe them as verified
+until someone has, and records the outcome in `insights/week-01.md`.
+
+## Cluster conventions
+
+Derived from a script known to work on this SLURM cluster. Apply these to
+every job script; see [`slurm/README.md`](slurm/README.md) for detail.
+
+- Partition `-p NvidiaAll`, no `--gres` line.
+- Batch jobs do **not** source `~/.bashrc` / `~/.zshrc`. Always
+  `export PATH="$HOME/.local/bin:$PATH"` so `uv` is reachable.
+- `$HOME` is NFS-mounted and quota-limited. Keep caches and bulk artifacts off
+  it: set `TMPDIR` to node-local scratch, and point `FOOD_SHAPLEY_RUNS` at
+  persistent scratch for real runs.
+- Assume compute nodes may be offline. Anything needing the network goes in
+  `slurm/prepare.sh` on a login node; compute-node steps use
+  `uv run --frozen --no-sync`.
+- Submit from the repository root; scripts `cd "${SLURM_SUBMIT_DIR:-$(pwd)}"`.
+- `set -euo pipefail` in every script, and keep preparation idempotent so a
+  resubmission after a partial failure resumes instead of redoing or clobbering.
+- Array jobs write **one output file per task** and derive their seed from
+  `derive_seed(config.seed, task_label(task_id))`, so tasks never collide and a
+  partial failure is re-runnable per task. Always check completeness afterwards
+  — an array that silently drops 3 % of its tasks looks like one that
+  succeeded.
+- Log directories must exist before `sbatch`, or submission fails;
+  `slurm/logs/{output_logs,error_logs}/` are tracked via `.gitkeep` and their
+  `*.log` contents are git-ignored.
 
 ## Development workflow
 

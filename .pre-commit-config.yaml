@@ -23,6 +23,17 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # The SLURM scripts cannot be executed off the cluster, so static checking is
+  # the only safety net they get. ``types: [file]`` plus an explicit pattern,
+  # because .slurm is not recognised as a shell file by extension.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--shell=bash]
+        types: [file]
+        files: ^slurm/.*\.(sh|slurm)$
+
   # mypy and pytest run through uv against the project environment, so they see
   # exactly the dependencies declared in uv.lock rather than an isolated
   # pre-commit virtualenv with a second, drifting set of pins.

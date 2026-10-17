@@ -46,6 +46,7 @@ results. What exists today:
 |---|---|
 | Repository skeleton, tooling, CI | Implemented |
 | Reproducibility scaffolding (config, seeding, run provenance, artifact layout) | Implemented |
+| SLURM toy job + array scaffolding (`slurm/`) | Written and locally simulated — **never submitted to a cluster** |
 | Weekly implementation plans (`docs/`) | Drafted from `PLAN.md` |
 | Insight log (`insights/`) | Templates only — **no findings recorded yet** |
 | FoodSeg103 loading, segment→player mapping | Planned (Week 1) |
@@ -64,6 +65,7 @@ CLAUDE.md               Instructions for Claude Code
 configs/                Experiment configurations (TOML), one per run
 docs/                   Weekly implementation plans + dataset documentation
 insights/               Dated research findings, one file per week
+slurm/                  Cluster job scripts + the infrastructure self-test
 src/food_shapley/       Installable Python package
 tests/unit/             Fast, isolated unit tests
 tests/integration/      Multi-component tests (marked `integration`)
@@ -106,6 +108,23 @@ uv run pytest -m integration         # integration tests only
 uv run ruff format .                 # apply formatting
 uv run pre-commit run --all-files    # everything at once
 ```
+
+## Running on the cluster
+
+`PLAN.md` step 0 calls for the SLURM submit and array mechanics to work on a
+trivial job before any real experiment depends on them. That toy job exists:
+
+```bash
+bash slurm/prepare.sh          # login node: log dirs, env sync, run directory
+sbatch slurm/toy_job.slurm     # single job: node, uv, import, GPU visibility
+sbatch slurm/toy_array.slurm   # 10-task array: per-task outputs and seeds
+
+uv run --frozen python -m food_shapley.selftest \
+    --config configs/smoke.toml verify --num-tasks 10
+```
+
+It touches no dataset and no model. See [`slurm/README.md`](slurm/README.md)
+for the cluster conventions these scripts assume.
 
 ## Reproducibility conventions
 

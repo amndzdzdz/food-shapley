@@ -21,6 +21,15 @@ Week 2's analysis interprets.
 | # | `PLAN.md` | Task | Days |
 |---|---|---|---|
 | 1.1 | 0 | Cluster scaffolding: environment on the SLURM nodes, `shapiq` + CLIP installed from the lockfile, FoodSeg103 downloaded, one toy array job submitted end-to-end | 0.5 |
+
+**Task 1.1 is partly pre-built.** `slurm/prepare.sh`, `slurm/toy_job.slurm`,
+`slurm/toy_array.slurm` and `food_shapley.selftest` exist, are unit-tested,
+pass shellcheck, and have been simulated locally. They have **not** been
+submitted to a cluster. What remains in task 1.1: actually submit them, fix
+whatever the cluster disagrees with, then add the research dependencies and
+download FoodSeg103. Record the first submission's outcome in
+`insights/week-01.md` — including whether the partition, walltime and
+`uv --no-sync` assumptions held.
 | 1.2 | 1 | FoodSeg103 loading; masks → coalition players (merge small segments, add a "rest" player, align masks with the resized image) | 1.0 |
 | 1.3 | 2 | Dish prompt set (e.g. the 101 Food-101 class names), CLIP setup, value function definition: log-probability of the target dish against all dish prompts | 0.5 |
 | 1.4 | 3 | The game: hide segments by blurring, batch the ~128 coalitions per image, return the dish score; implemented as a `shapiq.Game` subclass | 1.0 |
@@ -110,7 +119,8 @@ checked, not just that it was.
 
 ## Definition of done
 
-- [ ] A toy SLURM array job has run end-to-end on a node.
+- [ ] A toy SLURM array job has run end-to-end on a node, and
+      `selftest verify` reported every task complete.
 - [ ] FoodSeg103 loads and converts to players, with tests.
 - [ ] The value function is defined, documented, and sanity-checked on real images.
 - [ ] The `shapiq.Game` subclass produces exact SV, k-SII and Möbius values.

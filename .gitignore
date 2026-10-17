@@ -34,9 +34,12 @@ wandb/
 *.h5
 *.parquet
 
-# Cluster job output
+# Cluster job output. The log directories themselves are tracked (via
+# .gitkeep) because sbatch fails at submit time if --output/--error point at
+# a directory that does not exist.
 slurm-*.out
 *.sbatch.log
+slurm/logs/**/*.log
 
 # Credentials — never commit these
 *.pem
