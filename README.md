@@ -44,7 +44,7 @@ Week 1 task 1.1 is in progress. What exists today:
 
 | Area | Status |
 |---|---|
-| Repository skeleton, tooling, CI | Implemented |
+| Repository skeleton and tooling | Implemented |
 | Reproducibility scaffolding (config, seeding, run provenance, artifact layout) | Implemented |
 | Research dependencies (`shapiq`, `torch`, `open_clip`, `datasets`) | Installed and locked |
 | FoodSeg103 download + integrity verification (`food_shapley.download`) | Implemented; test split downloaded and verified |
@@ -72,7 +72,6 @@ slurm/                  Cluster job scripts + the infrastructure self-test
 src/food_shapley/       Installable Python package
 tests/unit/             Fast, isolated unit tests
 tests/integration/      Multi-component tests (marked `integration`)
-.github/workflows/      CI
 data/                   Inputs — git-ignored, never written by the code
 runs/                   Generated artifacts — git-ignored, one dir per run
 ```
@@ -80,8 +79,8 @@ runs/                   Generated artifacts — git-ignored, one dir per run
 ## Prerequisites
 
 - Python >= 3.12 — the exact version is pinned in `.python-version` (3.12) and
-  `uv` installs it for you, so local and CI environments cannot drift. The
-  floor is 3.12 because `shapiq` >= 1.5 requires it.
+  `uv` installs it for you, so checkouts cannot drift. The floor is 3.12
+  because `shapiq` >= 1.5 requires it.
 - [`uv`](https://docs.astral.sh/uv/) for environments, dependencies and locking
 - ~6 GB of disk for `.venv` (torch and its CUDA wheels), plus tens of GB of
   transient `uv` cache. On a quota-limited home directory, see the *Disk*
@@ -121,8 +120,6 @@ uv run python -m food_shapley.envcheck --dataset-split test
 
 ## Checks
 
-The same four checks run locally, in pre-commit, and in CI:
-
 ```bash
 uv run ruff check .           # lint
 uv run ruff format --check .  # formatting
@@ -138,6 +135,13 @@ uv run pytest -m integration         # integration tests only
 uv run ruff format .                 # apply formatting
 uv run pre-commit run --all-files    # everything at once
 ```
+
+**There is no CI.** Pre-commit is the only automated gate, and it is filtered
+by file type: a commit touching only Markdown runs neither mypy nor pytest,
+and `slow` tests are excluded from the hook entirely. Run
+`uv run pre-commit run --all-files` and `uv run pytest -m "not gpu"` by hand
+before anything that matters. A clean commit is not evidence that the suite
+is green.
 
 ## Running on the cluster
 

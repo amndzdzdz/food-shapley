@@ -92,7 +92,8 @@ fallback is used, record which models used it and report approximation error.
   if it is not invariant, test and document that too.
 - Integration: a miniature multi-model run with stub models, asserting the
   per-model artifact layout.
-- Mark anything requiring real checkpoints or GPUs with `gpu`; CI excludes it.
+- Mark anything requiring real checkpoints or GPUs with `gpu`; the pre-commit
+  hook excludes it.
 
 ## Risks and alternatives
 

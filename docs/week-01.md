@@ -123,7 +123,7 @@ checked, not just that it was.
   images with a stubbed or tiny model, asserting shapes, finiteness and
   efficiency.
 - The real model must never be downloaded inside the test suite. Mark anything
-  needing a GPU with `@pytest.mark.gpu`; CI excludes it.
+  needing a GPU with `@pytest.mark.gpu`; the pre-commit hook excludes it.
 
 ## Risks and alternatives
 

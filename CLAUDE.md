@@ -26,9 +26,9 @@ prioritises:
 - **Traceability** — research question → implementation → experiment →
   observation → conclusion, each link visible in the repository.
 
-A complete repository skeleton, green CI, and passing tests say nothing about
-the quality of the research. Never describe the project as having
-publication-quality results on the basis of its infrastructure.
+A complete repository skeleton and passing tests say nothing about the quality
+of the research. Never describe the project as having publication-quality
+results on the basis of its infrastructure.
 
 ## Current state
 
@@ -131,7 +131,12 @@ interpretation, limitations, and implications.
   experiments. A tiny synthetic game with a closed-form answer is worth more
   than a slow end-to-end smoke test.
 - Mark tests needing a GPU or cluster with `@pytest.mark.gpu` and anything slow
-  with `@pytest.mark.slow`. CI excludes `gpu`; pre-commit excludes both.
+  with `@pytest.mark.slow`. The pre-commit hook excludes both.
+- **There is no CI.** Pre-commit is the only automated gate, and it is
+  filtered by file type — a Markdown-only commit runs neither mypy nor
+  pytest, and `slow` tests never run automatically. Run
+  `uv run pytest -m "not gpu"` by hand before anything that matters, and do
+  not treat a clean commit as evidence the suite is green.
 - **Never skip a failing test, loosen an assertion, or delete a test to make
   the suite pass.** If a test fails, either the code or the expectation is
   wrong — find out which and say so.

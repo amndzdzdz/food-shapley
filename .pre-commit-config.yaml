@@ -1,5 +1,11 @@
-# Checks mirror .github/workflows/ci.yml exactly; the commands live in one place
-# only (this file and CI both call the same uv-run invocations).
+# There is no CI. These hooks are the only automated gate on the repository,
+# which has two consequences worth knowing:
+#
+#   1. mypy, pytest and shellcheck are filtered by file type, so a commit that
+#      touches only Markdown runs neither the type check nor the tests.
+#   2. The pytest hook excludes `slow`, so slow tests never run automatically.
+#
+# Run `uv run pytest -m "not gpu"` by hand before anything that matters.
 minimum_pre_commit_version: "4.0.0"
 
 repos:
@@ -36,7 +42,9 @@ repos:
 
   # mypy and pytest run through uv against the project environment, so they see
   # exactly the dependencies declared in uv.lock rather than an isolated
-  # pre-commit virtualenv with a second, drifting set of pins.
+  # pre-commit virtualenv with a second, drifting set of pins. `gpu` tests are
+  # excluded because no GPU is assumed; `slow` because a commit hook that takes
+  # minutes stops being run.
   - repo: local
     hooks:
       - id: mypy

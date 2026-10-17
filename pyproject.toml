@@ -62,7 +62,7 @@ addopts = [
 markers = [
     "integration: exercises several components together; slower, may touch the filesystem",
     "slow: takes more than a few seconds; excluded from the pre-commit hook",
-    "gpu: requires a GPU / cluster node; never run in CI",
+    "gpu: requires a GPU / cluster node; excluded from the pre-commit hook",
 ]
 filterwarnings = ["error"]
 

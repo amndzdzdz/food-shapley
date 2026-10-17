@@ -9,8 +9,9 @@ from food_shapley.paths import DATA_ROOT_ENV
 
 # These tests run against the real environment: the point of the module is to
 # report what is actually installed, and stubbing the imports out would only
-# test the stub. What is *not* exercised is the GPU path, which cannot be
-# asserted either way from CI -- see test_require_gpu_agrees_with_torch.
+# test the stub. The GPU path cannot be asserted absolutely, since it depends
+# on the machine -- see test_require_gpu_agrees_with_torch, which asserts the
+# verdict follows torch rather than asserting a particular verdict.
 
 
 @pytest.fixture
