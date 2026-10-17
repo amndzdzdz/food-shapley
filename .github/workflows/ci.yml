@@ -25,6 +25,12 @@ jobs:
       - name: Set up Python
         run: uv python install
 
+      # NOTE: this installs the CUDA build of torch -- ~4 GB of nvidia/* and
+      # triton wheels that a CPU runner cannot use. It is expected to work on
+      # ubuntu-latest but is slow, and is the first thing to change if CI
+      # starts running out of disk or time. The fix is a CPU-only torch index
+      # selected by extra; it is not done here because it changes how everyone
+      # installs the project, which is a decision, not a cleanup.
       - name: Install dependencies from the lockfile
         run: uv sync --frozen --all-groups
 

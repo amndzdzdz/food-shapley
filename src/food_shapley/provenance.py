@@ -23,8 +23,18 @@ from food_shapley.paths import RunLayout
 
 __all__ = ["RunProvenance", "capture_provenance", "write_run_metadata"]
 
-#: Packages whose versions are recorded. Extended as research deps are added.
-TRACKED_PACKAGES: tuple[str, ...] = ("food-shapley",)
+#: Packages whose versions are recorded with every run. These are the ones a
+#: number actually depends on: the index implementation, the model, and the
+#: array libraries underneath both. Distribution names, not import names.
+TRACKED_PACKAGES: tuple[str, ...] = (
+    "food-shapley",
+    "shapiq",
+    "torch",
+    "open-clip-torch",
+    "numpy",
+    "datasets",
+    "pillow",
+)
 
 
 @dataclass(frozen=True, slots=True)

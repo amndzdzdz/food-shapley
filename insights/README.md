@@ -4,13 +4,14 @@ This directory is the project's lab notebook. It holds what was *actually
 observed*. Planned work lives in [`docs/`](../docs/); nothing here should be
 written before the evidence for it exists.
 
-**No experiments have been run yet. All weekly files are empty templates.**
+**No experiment has been run and no model has been evaluated.** The only
+entries so far concern the input data.
 
 ## Index
 
 | File | Corresponding plan | Entries |
 |---|---|---|
-| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | none yet |
+| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | W01-01 (FoodSeg103 source), W01-02 (background label, missing names) |
 | [week-02.md](week-02.md) | [docs/week-02.md](../docs/week-02.md) | none yet |
 | [week-03.md](week-03.md) | [docs/week-03.md](../docs/week-03.md) | none yet |
 | [week-04.md](week-04.md) | [docs/week-04.md](../docs/week-04.md) | none yet |

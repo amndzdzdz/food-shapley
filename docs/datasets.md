@@ -1,32 +1,77 @@
 # Datasets: provenance, licensing, preprocessing
 
-Nothing in this file has been verified yet — no dataset has been downloaded.
-Fill in the unverified rows before the dataset is first used, and record the
-verification date. Dataset files live under `data/` and are never committed.
+FoodSeg103 has been downloaded and verified (2026-10-17); the remaining
+sections are still unverified and are marked as such. Fill in each unverified
+row before that dataset is first used, and record the verification date.
+Dataset files live under `data/` and are never committed.
 
 ## FoodSeg103
+
+**Verified 2026-10-17** by `python -m food_shapley.download --split test`.
 
 | Field | Value |
 |---|---|
 | Role | Primary dataset: images + ingredient segmentation masks (all weeks) |
 | Introduced in `PLAN.md` | Milestone 1, steps 0–1 |
-| Source URL | *unverified — fill in before first use* |
-| Version / release | *unverified* |
-| License and redistribution terms | *unverified — check before publishing any image crops in the paper* |
-| Split used | Test split; `PLAN.md` gives ~2,000–7,118 images |
-| Local path | `data/raw/foodseg103/` (override via `FOOD_SHAPLEY_DATA`) |
-| Verified on | — |
+| Source used | Hugging Face mirror [`EduardoPacheco/FoodSeg103`](https://huggingface.co/datasets/EduardoPacheco/FoodSeg103) |
+| Revision pinned | `34e1208e14bc3595d544fc8c3f3c6673253fd9ef` (lastModified 2024-04-29) |
+| Authoritative source | `https://research.larc.smu.edu.sg/downloads/FoodSeg103/FoodSeg103.zip` (password-protected). **Returned HTTP 502 on 2026-10-17** — see below |
+| License | Apache-2.0 (both the original release and the mirror) |
+| Split used | `test` in this project's vocabulary = `validation` on the mirror; 2,135 images |
+| Split sizes observed | train 4,983 / test 2,135 = 7,118 — matches the FoodSeg103 paper exactly |
+| Columns | `image`, `label`, `classes_on_image`, `id` |
+| Label id range observed | 0–103; 78 distinct ids present in the 200 test rows sampled |
+| On-disk size | ~110 MB (single Arrow shard) after conversion; ~1.25 GB of parquet passes through the `HF_HOME` cache first |
+| Local path | `data/raw/foodseg103/<split>/` (override via `FOOD_SHAPLEY_DATA`) |
+| Integrity record | `data/raw/foodseg103/<split>/manifest.json`; `--verify-only` re-hashes the payload against it |
 
-### Preprocessing assumptions (to be confirmed in Week 1)
+### Why the mirror, and what that costs
 
-- **Label 0 is background, not a player** (`PLAN.md`). It must be excluded from
-  the player set.
+The authoritative distribution is the authors' password-protected zip. On
+2026-10-17 that URL returned HTTP 502 (confirmed with a HEAD, a ranged GET,
+and a 200 from the host root, so the host was up and the file was not). The
+mirror was used instead.
+
+What this does and does not establish:
+
+- The mirror's split sizes match the paper exactly, and it carries the same
+  Apache-2.0 license.
+- It is a third-party re-upload and has **not** been byte-compared against the
+  original. If the official URL comes back, compare the two and record the
+  result here.
+- The mirror is pinned to a commit. "We used FoodSeg103" is not a reproducible
+  statement without a revision; a mirror can be updated or deleted.
+
+### Preprocessing facts and assumptions
+
+Verified on the downloaded test split:
+
+- **`classes_on_image` includes background class 0.** On example 0 it is
+  identical to the set of unique mask ids, `[0, 20, 56, 66, 84, 96]`. This is
+  exactly the trap `PLAN.md` flags — taking `classes_on_image` as the player
+  set would make "background" a player. Label 0 must be dropped explicitly,
+  and there is a test for it.
+- **Images and masks agree in size in the raw data** (checked on 200 rows).
+  Misalignment, if it appears, will be introduced by our own resizing, not
+  inherited.
+- Image mode `RGB`, mask mode `L` (uint8).
+
+Still to confirm in Week 1:
+
 - Images and masks must be resized with consistent alignment; masks require
   nearest-neighbour interpolation, images do not.
 - Small segments are merged and a "rest" player is added, capping the player
   count at `max_players` (see `configs/`). The merge threshold is a
   configuration value, not a hidden constant, and the number of images affected
   must be recorded.
+- **The mirror carries no label-id → ingredient-name mapping.** Its features
+  are `image: Image`, `label: Image`, `classes_on_image: List(int64)`,
+  `id: int64` — the mask is stored as an image, not as a `ClassLabel`, so the
+  names are absent. `PLAN.md` step 1 needs those names (an ingredient called
+  "class 56" is not interpretable in a paper). The official release ships them
+  in `category_id.txt`, which is inside the zip that currently 502s. Resolve
+  this before step 1: either recover the file, or source the list from the
+  dataset card and record here where it came from.
 
 ## Food-101 class names
 

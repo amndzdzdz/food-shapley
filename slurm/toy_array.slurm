@@ -39,8 +39,14 @@ export TMPDIR="${TMPDIR:-/tmp/${USER}_${SLURM_JOB_ID:-$$}}"
 mkdir -p "$TMPDIR"
 
 export FOOD_SHAPLEY_RUNS="${FOOD_SHAPLEY_RUNS:-$(pwd)/runs}"
+export FOOD_SHAPLEY_DATA="${FOOD_SHAPLEY_DATA:-$(pwd)/data}"
+export HF_HOME="${HF_HOME:-$TMPDIR/hf}"
 
 CONFIG="${CONFIG:-configs/smoke.toml}"
+
+# No environment check here on purpose: toy_job.slurm already ran it, and
+# importing torch in each of N array tasks costs seconds per task for
+# information that does not vary between them.
 
 echo "array job ${SLURM_ARRAY_JOB_ID:-?} task ${SLURM_ARRAY_TASK_ID:-?} on $(hostname)"
 

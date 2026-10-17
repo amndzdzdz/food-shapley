@@ -3,13 +3,32 @@ name = "food-shapley"
 version = "0.1.0"
 description = "Exact Shapley values and interactions over food-ingredient segments to study compositional vision-language recognition"
 readme = "README.md"
-requires-python = ">=3.11"
+# shapiq >= 1.5 requires Python >= 3.12, and shapiq is the core method of this
+# project, so 3.12 is the floor. (shapiq 1.4.1 was the last release supporting
+# 3.11; pinning to it to keep 3.11 would mean an old version of the one
+# dependency the method rests on.)
+requires-python = ">=3.12"
 license = { text = "MIT" }
-# Runtime dependencies are intentionally empty at initialization time.
-# The research stack (shapiq, torch, open_clip/transformers, datasets) is added
-# in Week 1, when the first code that actually imports it is written.
-# See docs/week-01.md.
-dependencies = []
+
+# Each dependency is here because code in this repository imports it.
+dependencies = [
+    # The method itself: exact Shapley values, k-SII and Möbius transforms
+    # (PLAN.md steps 3-5).
+    "shapiq>=1.7",
+    # Model inference backend for CLIP and, later, the Milestone 2 model
+    # families.
+    "torch>=2.4",
+    # CLIP implementation. Chosen over transformers because the configuration
+    # already names open_clip checkpoints and because Week 2's token-dropping
+    # removal operator (PLAN.md step 6) needs access to ViT internals.
+    "open-clip-torch>=3.0",
+    # Coalition encoding, masks, and the stored .npz value arrays.
+    "numpy>=2.0",
+    # FoodSeg103 access; see docs/datasets.md.
+    "datasets>=4.0",
+    # Image and segmentation-mask handling, including the blur removal operator.
+    "pillow>=11.0",
+]
 
 [dependency-groups]
 dev = [
@@ -52,7 +71,7 @@ filterwarnings = ["error"]
 # --------------------------------------------------------------------------- #
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -105,7 +124,7 @@ docstring-code-format = true
 # mypy (strict)
 # --------------------------------------------------------------------------- #
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 files = ["src", "tests"]
 strict = true
 warn_unreachable = true
@@ -116,7 +135,15 @@ no_implicit_reexport = true
 pretty = true
 
 # Untyped third-party packages are opted out here, one at a time, with a reason.
-# Example:
-# [[tool.mypy.overrides]]
-# module = ["shapiq.*"]
-# ignore_missing_imports = true
+# shapiq, torch, numpy and pillow all ship py.typed and are checked normally.
+
+# datasets ships no py.typed marker. Only food_shapley.download imports it, and
+# it keeps datasets types out of its public signatures.
+[[tool.mypy.overrides]]
+module = ["datasets.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+# Without a py.typed marker datasets has no explicit re-export list, so
+# datasets.load_dataset looks like a private import to the global
+# no_implicit_reexport rule. Relaxed for this module only.
+implicit_reexport = true

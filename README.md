@@ -39,17 +39,20 @@ extension as Milestone 2.
 
 ## Project status
 
-**Repository initialization only.** No research code, no experiments, no
-results. What exists today:
+**Infrastructure and data acquisition only. No experiments, no results.**
+Week 1 task 1.1 is in progress. What exists today:
 
 | Area | Status |
 |---|---|
 | Repository skeleton, tooling, CI | Implemented |
 | Reproducibility scaffolding (config, seeding, run provenance, artifact layout) | Implemented |
+| Research dependencies (`shapiq`, `torch`, `open_clip`, `datasets`) | Installed and locked |
+| FoodSeg103 download + integrity verification (`food_shapley.download`) | Implemented; test split downloaded and verified |
+| Environment / GPU / dataset check (`food_shapley.envcheck`) | Implemented |
 | SLURM toy job + array scaffolding (`slurm/`) | Written and locally simulated — **never submitted to a cluster** |
 | Weekly implementation plans (`docs/`) | Drafted from `PLAN.md` |
-| Insight log (`insights/`) | Templates only — **no findings recorded yet** |
-| FoodSeg103 loading, segment→player mapping | Planned (Week 1) |
+| Insight log (`insights/`) | Dataset observations only — **no experimental findings** |
+| FoodSeg103 → segment→player mapping | Planned (Week 1, task 1.2) |
 | CLIP value function, `shapiq.Game`, exact SV/k-SII/Möbius | Planned (Week 1) |
 | Full SLURM run, second removal operator, analysis | Planned (Weeks 1–2) |
 | Cross-model scaling, compositionality index, benchmarks | Planned (Weeks 4–6) |
@@ -76,17 +79,44 @@ runs/                   Generated artifacts — git-ignored, one dir per run
 
 ## Prerequisites
 
-- Python >= 3.11 — the exact version is pinned in `.python-version` (3.11) and
-  `uv` installs it for you, so local and CI environments cannot drift
+- Python >= 3.12 — the exact version is pinned in `.python-version` (3.12) and
+  `uv` installs it for you, so local and CI environments cannot drift. The
+  floor is 3.12 because `shapiq` >= 1.5 requires it.
 - [`uv`](https://docs.astral.sh/uv/) for environments, dependencies and locking
+- ~6 GB of disk for `.venv` (torch and its CUDA wheels), plus tens of GB of
+  transient `uv` cache. On a quota-limited home directory, see the *Disk*
+  section of [`slurm/README.md`](slurm/README.md).
 - For the actual experiments (not yet implemented): access to a SLURM cluster
-  with GPUs, plus the FoodSeg103 dataset — see [`docs/datasets.md`](docs/datasets.md)
+  with GPUs.
 
 ## Setup
 
 ```bash
 uv sync --all-groups          # create .venv from uv.lock, exactly
 uv run pre-commit install     # enable the pre-commit hooks
+```
+
+## Data
+
+FoodSeg103 is fetched from a revision-pinned mirror into `data/raw/`, which is
+git-ignored:
+
+```bash
+uv run python -m food_shapley.download --split test   # ~3 min, idempotent
+uv run python -m food_shapley.download --split test --verify-only
+```
+
+Each split gets a `manifest.json` recording the mirror, the pinned revision,
+the example count, the license and a content hash; `--verify-only` re-hashes
+the files against it, so a truncated download fails here rather than as a
+confusing model error later. Provenance and licensing:
+[`docs/datasets.md`](docs/datasets.md).
+
+To check that a machine can actually run the pipeline — imports, GPU, dataset
+integrity, downloading nothing:
+
+```bash
+uv run python -m food_shapley.envcheck --dataset-split test
 ```
 
 ## Checks
@@ -115,16 +145,19 @@ uv run pre-commit run --all-files    # everything at once
 trivial job before any real experiment depends on them. That toy job exists:
 
 ```bash
-bash slurm/prepare.sh          # login node: log dirs, env sync, run directory
-sbatch slurm/toy_job.slurm     # single job: node, uv, import, GPU visibility
+bash slurm/prepare.sh          # login node: log dirs, env sync, dataset, run dir
+sbatch slurm/toy_job.slurm     # single job: uv, research stack, GPU, dataset
 sbatch slurm/toy_array.slurm   # 10-task array: per-task outputs and seeds
 
 uv run --frozen python -m food_shapley.selftest \
     --config configs/smoke.toml verify --num-tasks 10
 ```
 
-It touches no dataset and no model. See [`slurm/README.md`](slurm/README.md)
-for the cluster conventions these scripts assume.
+The toy job loads no model and reads no dataset row — it imports the research
+libraries, checks the GPU, and re-hashes the dataset. See
+[`slurm/README.md`](slurm/README.md) for the cluster conventions these scripts
+assume, all of which are still unverified: **nothing here has been submitted
+to a cluster yet.**
 
 ## Reproducibility conventions
 

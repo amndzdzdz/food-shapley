@@ -32,6 +32,17 @@ def test_run_metadata_is_written(tmp_path: Path, config: ExperimentConfig) -> No
     assert metadata["packages"]["food-shapley"] is not None
 
 
+def test_research_dependency_versions_are_recorded(
+    tmp_path: Path, config: ExperimentConfig
+) -> None:
+    """A number depends on the index and model libraries, so a run must name their versions."""
+    layout = write_run_metadata(config, layout=_layout(tmp_path, config))
+    packages: dict[str, str | None] = json.loads(layout.metadata_file.read_text())["packages"]
+
+    for name in ("shapiq", "torch", "open-clip-torch", "numpy", "datasets", "pillow"):
+        assert packages[name] is not None, f"{name} version not recorded"
+
+
 def test_run_directory_is_traceable_to_config(tmp_path: Path, config: ExperimentConfig) -> None:
     layout = write_run_metadata(config, layout=_layout(tmp_path, config))
     assert layout.root.name == f"{config.name}-{config_fingerprint(config)}"

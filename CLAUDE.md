@@ -32,11 +32,15 @@ publication-quality results on the basis of its infrastructure.
 
 ## Current state
 
-Infrastructure only. `src/food_shapley/` contains configuration, seeding,
-artifact layout, run provenance, and a SLURM self-test (`selftest.py`, which
-exercises the array mechanics without a dataset or a model). **No research
-code, no experiments, no results.** The pipeline described in `PLAN.md` starts
-in Week 1.
+Infrastructure and data acquisition. `src/food_shapley/` contains
+configuration, seeding, artifact layout, run provenance, a SLURM self-test
+(`selftest.py`, array mechanics without a dataset or a model), the FoodSeg103
+downloader (`download.py`) and the node environment check (`envcheck.py`).
+The FoodSeg103 test split has been downloaded and verified.
+
+**No model has been loaded, no experiment has been run, no result exists.**
+Week 1 task 1.1 is in progress; the method itself (`PLAN.md` steps 1–5) has
+not been started, and nothing has ever been submitted to a SLURM cluster.
 
 The scripts in `slurm/` have been simulated locally and pass shellcheck, but
 **have never been submitted to a cluster**. Do not describe them as verified

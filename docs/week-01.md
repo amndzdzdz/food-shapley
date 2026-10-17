@@ -21,20 +21,34 @@ Week 2's analysis interprets.
 | # | `PLAN.md` | Task | Days |
 |---|---|---|---|
 | 1.1 | 0 | Cluster scaffolding: environment on the SLURM nodes, `shapiq` + CLIP installed from the lockfile, FoodSeg103 downloaded, one toy array job submitted end-to-end | 0.5 |
-
-**Task 1.1 is partly pre-built.** `slurm/prepare.sh`, `slurm/toy_job.slurm`,
-`slurm/toy_array.slurm` and `food_shapley.selftest` exist, are unit-tested,
-pass shellcheck, and have been simulated locally. They have **not** been
-submitted to a cluster. What remains in task 1.1: actually submit them, fix
-whatever the cluster disagrees with, then add the research dependencies and
-download FoodSeg103. Record the first submission's outcome in
-`insights/week-01.md` — including whether the partition, walltime and
-`uv --no-sync` assumptions held.
 | 1.2 | 1 | FoodSeg103 loading; masks → coalition players (merge small segments, add a "rest" player, align masks with the resized image) | 1.0 |
 | 1.3 | 2 | Dish prompt set (e.g. the 101 Food-101 class names), CLIP setup, value function definition: log-probability of the target dish against all dish prompts | 0.5 |
 | 1.4 | 3 | The game: hide segments by blurring, batch the ~128 coalitions per image, return the dish score; implemented as a `shapiq.Game` subclass | 1.0 |
 | 1.5 | 4 | Exact SV, k-SII and Möbius via `shapiq.ExactComputer`, plus the two validity checks below | 1.0 |
 | 1.6 | 5 | Scale out: SLURM job array over the ~2,000–7,118 test images, one `.npz` of game values per image | 1.0 |
+
+### Status of task 1.1 (updated 2026-10-17)
+
+Done and verified locally:
+
+- Research dependencies added and locked: `shapiq`, `torch`, `open-clip-torch`,
+  `numpy`, `datasets`, `pillow`. Python floor raised to 3.12 (shapiq ≥ 1.5
+  requires it).
+- `food_shapley.download` fetches and verifies FoodSeg103 from a
+  revision-pinned mirror, writing a manifest with a content hash. The real
+  test split (2,135 images) has been downloaded and verified. See
+  [`datasets.md`](datasets.md).
+- `food_shapley.envcheck` reports the research stack, GPU and dataset
+  integrity from inside a job, downloading nothing.
+- `slurm/prepare.sh` now also downloads the dataset; `slurm/toy_job.slurm` runs
+  `envcheck --require-gpu --require-dataset`.
+
+**Not done: nothing has been submitted to a cluster.** The scripts pass
+shellcheck and have been run locally as far as a GPU-less machine allows —
+`toy_job.slurm` reaches the `--require-gpu` gate and stops there, as designed.
+Partition, walltime, shared-scratch `.venv` and `uv run --no-sync` on an
+offline node all remain assumptions. Submitting them is the remaining part of
+task 1.1; record the outcome in `insights/week-01.md`.
 
 Dependencies to add to `pyproject.toml` this week (with the lockfile updated and
 committed): `shapiq`, a CLIP implementation (`open_clip_torch` or
@@ -42,6 +56,11 @@ committed): `shapiq`, a CLIP implementation (`open_clip_torch` or
 loading. Add them when the first code imports them, not before. If a package
 ships no type information, add a narrow `[[tool.mypy.overrides]]` entry naming
 that module only.
+
+*Done in task 1.1.* `open_clip_torch` was chosen over `transformers`: the
+configuration already names open_clip checkpoints, and Week 2's token-dropping
+removal operator (`PLAN.md` step 6) needs access to ViT internals. `datasets`
+is the only one without a `py.typed` marker and has a narrow override.
 
 ## Experimental design and hypotheses
 
