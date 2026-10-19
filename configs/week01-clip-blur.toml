@@ -1,0 +1,54 @@
+# Week 1 main run: CLIP over the FoodSeg103 test split, blur removal operator
+# (PLAN.md Milestone 1, steps 1-5). This is the configuration the workshop
+# baseline is meant to come from; `smoke.toml` is for infrastructure only.
+
+name = "week01-clip-blur"
+seed = 0
+dataset = "foodseg103"
+split = "test"
+
+# Pinned by name; the checkpoint hash is recorded in the run metadata when the
+# model is first loaded (PLAN.md step 2).
+model = "openclip/ViT-B-32"
+
+# Blur is the Week-1 operator. Week 2 adds token dropping as the robustness
+# check against "blur does not actually remove information".
+removal = "blur"
+
+# ViT-B-32's input: 224 px, 32 px patches, so 7x7 = 49 patches.
+image_size = 224
+
+# Measured on all 2,135 test images after the centre crop: the ingredient count
+# peaks at 10. The `scene` player takes one slot on top of that, so 11 is what
+# it takes for this cap never to fire on this split; at 10 it would start
+# merging real ingredients into `rest`. A guard, not an active policy -- see
+# insights/week-01.md. 2**11 = 2,048 coalitions is the worst case per image.
+max_players = 11
+
+# 0.5 % of the 224x224 frame is about a quarter of one ViT patch. Below that a
+# segment cannot plausibly carry its own evidence. Merges 72 of 7,651 segments
+# (0.94 %); 0.0 would keep all of them.
+min_area_fraction = 0.005
+
+# Chosen from a rendered sweep over 4/8/12/20/32 px, not from convention; see
+# W01-07 in insights/week-01.md. At 4-8 px individual ingredients are still
+# readable, which would make "hidden" a lie; at 20-32 px the frame collapses to
+# a colour field and the sharp coalition becomes a cut-out on a blank ground,
+# strengthening the silhouette confound. 12 is the compromise, and it is
+# comparable to a ViT-B-32 patch (32 px). It was *not* tuned against model
+# behaviour -- no model has been loaded yet.
+blur_radius = 12.0
+
+# The scene -- plate, table, cutlery, a mug -- is a player in its own right.
+# It is 39 % of the model's input on average and the majority of pixels in 30 %
+# of images, so the alternatives both break something: "hidden" makes v(N) an
+# image the model never saw, "visible" makes the scene a free rider that is
+# present in every coalition and attributed in none. As a player it gets a
+# Shapley value like everything else, v(N) is the photograph, and v(empty) is a
+# fully blurred frame. See W01-09 and segments.py.
+#
+# It is NOT an ingredient: `PlayerSet.ingredient_indices` excludes it, and
+# every ingredient-level statistic must be computed over those indices.
+background_mode = "player"
+
+notes = "Week 1 baseline. No run has been executed with this configuration yet."

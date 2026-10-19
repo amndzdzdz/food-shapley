@@ -79,9 +79,11 @@ Still to confirm in Week 1:
 - `id2label.json` is **not yet downloaded or covered by the manifest hash**.
   It should be, so the names are pinned to the same revision as the pixels.
 - **Ingredients per image (test split, background excluded): median 3,
-  maximum 10.** Measured over all 2,135 images; see insight W01-04. Exact
-  Shapley over the whole split therefore needs ~47,800 coalitions in total,
-  and `max_players = 10` caps nothing.
+  maximum 10.** Measured over all 2,135 images; see insight W01-04.
+- The non-ingredient region is a **`scene` player** under the Week-1 config
+  (W01-09), so the player count is one higher than the ingredient count on
+  2,134 of 2,135 images. With `max_players = 11` the cap fires on none of
+  them, and exact Shapley over the whole split needs **91,828 coalitions**.
 
 ## Food-101 class names
 

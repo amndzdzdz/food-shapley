@@ -13,7 +13,11 @@ dataset = "foodseg103"
 split = "test"
 model = "openclip/ViT-B-32"
 removal = "blur"
+image_size = 224
 max_players = 7
+min_area_fraction = 0.005
+blur_radius = 12.0
+background_mode = "player"
 """
 
 
@@ -39,7 +43,19 @@ def test_load_config_reports_missing_keys(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("name", "  "), ("seed", -1), ("max_players", 0)],
+    [
+        ("name", "  "),
+        ("seed", -1),
+        ("image_size", 0),
+        ("max_players", 0),
+        ("min_area_fraction", -0.1),
+        ("min_area_fraction", 1.5),
+        ("blur_radius", 0.0),
+        ("blur_radius", -1.0),
+        ("background_mode", "blurred"),
+        ("background_mode", ""),
+        ("background_mode", "Player"),
+    ],
 )
 def test_invalid_fields_are_rejected(config: ExperimentConfig, field: str, value: object) -> None:
     kwargs = config.to_dict() | {field: value}

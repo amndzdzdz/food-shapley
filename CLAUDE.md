@@ -32,15 +32,25 @@ results on the basis of its infrastructure.
 
 ## Current state
 
-Infrastructure and data acquisition. `src/food_shapley/` contains
-configuration, seeding, artifact layout, run provenance, a SLURM self-test
-(`selftest.py`, array mechanics without a dataset or a model), the FoodSeg103
-downloader (`download.py`) and the node environment check (`envcheck.py`).
-The FoodSeg103 test split has been downloaded and verified.
+Infrastructure, data acquisition, and the segment→player mapping.
+`src/food_shapley/` contains configuration, seeding, artifact layout, run
+provenance, a SLURM self-test (`selftest.py`, array mechanics without a dataset
+or a model), the FoodSeg103 downloader (`download.py`), the node environment
+check (`envcheck.py`), split loading (`dataset.py`), player construction under
+CLIP's geometry (`segments.py`), the blur removal operator (`masking.py`) and
+the coalition contact-sheet renderer (`preview.py`). The FoodSeg103 test split
+has been downloaded and verified.
 
 **No model has been loaded, no experiment has been run, no result exists.**
-Week 1 task 1.1 is in progress; the method itself (`PLAN.md` steps 1–5) has
-not been started, and nothing has ever been submitted to a SLURM cluster.
+Week 1 task 1.2 is done; 1.1 is still open on its cluster-submission step. The
+value function and the `shapiq` game (`PLAN.md` steps 2–4) have not been
+started, and nothing has ever been submitted to a SLURM cluster.
+
+The non-ingredient region is a **player** (`background_mode = "player"`), a
+deliberate, recorded deviation from `PLAN.md`'s "label 0 is background, not a
+player". It is still never an *ingredient*: filter on
+`PlayerSet.ingredient_indices` for every ingredient-level statistic, or the
+scene silently counts as food. See `insights/week-01.md` W01-09.
 
 The scripts in `slurm/` have been simulated locally and pass shellcheck, but
 **have never been submitted to a cluster**. Do not describe them as verified

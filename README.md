@@ -39,8 +39,10 @@ extension as Milestone 2.
 
 ## Project status
 
-**Infrastructure and data acquisition only. No experiments, no results.**
-Week 1 task 1.1 is in progress. What exists today:
+**Infrastructure, data acquisition and the segment→player mapping. No model
+has been loaded, no experiment run, no result exists.** Week 1 task 1.2 is
+done; task 1.1 is still open on its cluster-submission step. What exists
+today:
 
 | Area | Status |
 |---|---|
@@ -51,9 +53,11 @@ Week 1 task 1.1 is in progress. What exists today:
 | Environment / GPU / dataset check (`food_shapley.envcheck`) | Implemented |
 | SLURM toy job + array scaffolding (`slurm/`) | Written and locally simulated — **never submitted to a cluster** |
 | Weekly implementation plans (`docs/`) | Drafted from `PLAN.md` |
-| Insight log (`insights/`) | Dataset observations only — **no experimental findings** |
-| FoodSeg103 → segment→player mapping | Planned (Week 1, task 1.2) |
-| CLIP value function, `shapiq.Game`, exact SV/k-SII/Möbius | Planned (Week 1) |
+| Insight log (`insights/`) | Dataset, player-construction and masking observations — **no experimental findings** |
+| FoodSeg103 loading (`food_shapley.dataset`) | Implemented |
+| Segment→player mapping, CLIP geometry (`food_shapley.segments`) | Implemented; alignment verified against torchvision **and** by eye. The scene is a player, never an ingredient ([W01-09](insights/week-01.md)) |
+| Blur removal operator + coalition renderer (`masking.py`, `preview.py`) | Implemented; visual check passed on 19 coalitions / 5 images |
+| CLIP value function, `shapiq.Game`, exact SV/k-SII/Möbius | Planned (Week 1, tasks 1.3–1.5) |
 | Full SLURM run, second removal operator, analysis | Planned (Weeks 1–2) |
 | Cross-model scaling, compositionality index, benchmarks | Planned (Weeks 4–6) |
 
@@ -117,6 +121,38 @@ integrity, downloading nothing:
 ```bash
 uv run python -m food_shapley.envcheck --dataset-split test
 ```
+
+## Looking at what the model will see
+
+`PLAN.md` requires a human to confirm that "only bun visible" really shows only
+the bun before any values are computed, because the efficiency check cannot
+detect mis-registered masks — a game built on them stays perfectly
+self-consistent. This renders one labelled sheet per image, with the original,
+the empty coalition, every singleton, the ingredients without the scene, and
+the grand coalition:
+
+```bash
+uv run python -m food_shapley.preview --config configs/week01-clip-blur.toml --num-images 4
+uv run python -m food_shapley.preview --config configs/week01-clip-blur.toml \
+    --index 1569 --scale 3 --open
+```
+
+Sheets go to `runs/visual-check/<fingerprint>/`. Panels are magnified with
+nearest-neighbour (`--scale`, default 2) because 224 px is too small to judge a
+segment boundary on screen, and because a smoothing resize would hide exactly
+the one-pixel misalignment the check is looking for. `--open` hands each sheet
+to the system image viewer.
+
+It loads no model and computes no value. Sampled indices are drawn from the
+config seed, so repeating a command gives the same images. Re-run it whenever
+the geometry, the player construction or the removal operator changes; the
+outcome of the Week-1 inspection is recorded as
+[W01-07](insights/week-01.md).
+
+Under `background_mode = "player"` the first and last panels must be
+pixel-identical: the grand coalition *is* the photograph. If they differ, some
+pixel belongs to no player and the whole decomposition is explaining an image
+the model never saw.
 
 ## Checks
 

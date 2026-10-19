@@ -26,6 +26,10 @@ dependencies = [
     "numpy>=2.0",
     # FoodSeg103 access; see docs/datasets.md.
     "datasets>=4.0",
+    # Imported directly, not only via datasets: load_dataset reads the parquet
+    # shards and nothing else, so the mirror's top-level id2label.json has to be
+    # fetched by hand to pin the ingredient names to the same revision.
+    "huggingface-hub>=0.30",
     # Image and segmentation-mask handling, including the blur removal operator.
     "pillow>=11.0",
 ]
@@ -36,6 +40,10 @@ dev = [
     "pre-commit>=4.0",
     "pytest>=8.3",
     "ruff>=0.14",
+    # Already present via open-clip-torch, but declared because the segment
+    # geometry test asserts byte-equality against torchvision's own Resize and
+    # CenterCrop -- that comparison is the test, so the dependency is explicit.
+    "torchvision>=0.19",
 ]
 
 [build-system]
@@ -147,3 +155,12 @@ follow_untyped_imports = true
 # datasets.load_dataset looks like a private import to the global
 # no_implicit_reexport rule. Relaxed for this module only.
 implicit_reexport = true
+
+# torchvision ships no py.typed marker either. It is imported only by
+# tests/unit/test_segments.py, which asserts that our resize-and-crop geometry
+# matches torchvision's byte for byte; no source module imports it. Its own
+# bodies are deliberately not followed -- the transforms are untyped, and
+# calling them is the entire point of that test.
+[[tool.mypy.overrides]]
+module = ["torchvision.*"]
+ignore_missing_imports = true

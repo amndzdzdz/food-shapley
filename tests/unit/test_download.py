@@ -10,14 +10,20 @@ from typing import TYPE_CHECKING
 import pytest
 
 from food_shapley.download import (
+    BACKGROUND_LABEL,
     EXPECTED_SPLIT_SIZES,
     HF_REPO_ID,
     HF_REVISION,
+    ID2LABEL_FILENAME,
+    NUM_LABELS,
     DatasetManifest,
     _hash_directory,
+    _parse_id2label,
     download_split,
+    id2label_path,
     main,
     manifest_path,
+    read_id2label,
     read_manifest,
     split_dir,
     verify_split,
@@ -86,6 +92,49 @@ def fake_datasets(monkeypatch: pytest.MonkeyPatch) -> Callable[..., list[dict[st
         return calls
 
     return install
+
+
+# --------------------------------------------------------------------------- #
+# A stand-in for the Hub file download.
+#
+# `id2label.json` is not part of the parquet shards, so `download_split` fetches
+# it with `hf_hub_download`. That is a network call, so it is replaced here for
+# every test in the module -- autouse, so that a new test cannot accidentally
+# reach the network by forgetting the fixture.
+# --------------------------------------------------------------------------- #
+
+
+def fake_id2label_bytes(num_labels: int = NUM_LABELS) -> bytes:
+    """A structurally valid id -> name mapping.
+
+    The names are synthetic: what `_parse_id2label` guards is the shape of the
+    mapping, and pinning the real 104 names here would duplicate the dataset,
+    not test the code.
+    """
+    names = {str(BACKGROUND_LABEL): "background"}
+    names.update({str(i): f"ingredient-{i}" for i in range(1, num_labels)})
+    return json.dumps(names).encode()
+
+
+@pytest.fixture(autouse=True)
+def fake_hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve `id2label.json` from disk instead of the Hub."""
+    import huggingface_hub
+
+    cached = tmp_path / "hub-cache" / ID2LABEL_FILENAME
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_bytes(fake_id2label_bytes())
+
+    def hf_hub_download(*, repo_id: str, filename: str, revision: str, repo_type: str) -> str:
+        assert (repo_id, filename, revision, repo_type) == (
+            HF_REPO_ID,
+            ID2LABEL_FILENAME,
+            HF_REVISION,
+            "dataset",
+        )
+        return str(cached)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", hf_hub_download)
 
 
 @pytest.fixture
@@ -199,6 +248,132 @@ def test_download_writes_the_payload_and_a_manifest(
     assert manifest.upstream_split == "validation"
     assert manifest.revision == HF_REVISION
     assert manifest.datasets_version == FAKE_DATASETS_VERSION
+
+
+# --------------------------------------------------------------------------- #
+# Ingredient names
+# --------------------------------------------------------------------------- #
+
+
+def test_download_stores_the_ingredient_names(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """`load_dataset` never sees id2label.json, so it must be fetched separately."""
+    fake_datasets()
+    manifest = download_split("test", base=tmp_path)
+    assert id2label_path("test", base=tmp_path).is_file()
+    assert manifest.num_labels == NUM_LABELS
+
+
+def test_stored_names_are_byte_identical_to_the_mirror(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """Storing the raw bytes is what makes id2label_sha256 comparable upstream."""
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    assert id2label_path("test", base=tmp_path).read_bytes() == fake_id2label_bytes()
+
+
+def test_names_are_covered_by_the_content_hash(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """Fetched after save_to_disk, which clears the directory, and before hashing."""
+    fake_datasets()
+    manifest = download_split("test", base=tmp_path)
+    assert manifest.content_sha256 == _hash_directory(split_dir("test", base=tmp_path))
+
+
+def test_read_id2label_returns_integer_keys(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """Masks hold integers; a mapping keyed by strings would silently never match."""
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    mapping = read_id2label("test", base=tmp_path)
+    assert set(mapping) == set(range(NUM_LABELS))
+
+
+def test_id2label_includes_background_as_a_non_ingredient(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """Label 0 is in the mapping but is never a coalition player (PLAN.md)."""
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    assert BACKGROUND_LABEL in read_id2label("test", base=tmp_path)
+
+
+def test_read_id2label_points_at_the_download_command(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match=r"food_shapley\.download --split test"):
+        read_id2label("test", base=tmp_path)
+
+
+def test_parse_rejects_a_truncated_mapping() -> None:
+    """A mapping short of 104 entries would leave ingredients unnamed."""
+    with pytest.raises(ValueError, match="missing"):
+        _parse_id2label(fake_id2label_bytes(num_labels=NUM_LABELS - 1))
+
+
+def test_parse_rejects_a_shifted_mapping() -> None:
+    """The failure no downstream check could catch: every ingredient renamed."""
+    shifted = {str(i + 1): f"ingredient-{i}" for i in range(NUM_LABELS)}
+    with pytest.raises(ValueError, match=r"missing \[0\], unexpected \[104\]"):
+        _parse_id2label(json.dumps(shifted).encode())
+
+
+def test_parse_rejects_non_integer_keys() -> None:
+    with pytest.raises(ValueError, match="integer-valued strings"):
+        _parse_id2label(b'{"background": "background"}')
+
+
+def test_parse_rejects_an_empty_name() -> None:
+    """An unnamed ingredient would appear in a figure as a blank label."""
+    names = json.loads(fake_id2label_bytes())
+    names["7"] = "  "
+    with pytest.raises(ValueError, match=r"ids \[7\]"):
+        _parse_id2label(json.dumps(names).encode())
+
+
+def test_parse_rejects_invalid_json() -> None:
+    with pytest.raises(ValueError, match="not valid JSON"):
+        _parse_id2label(b"{")
+
+
+def test_verify_detects_changed_ingredient_names(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """Reported as a name change, not as a generic corrupt directory."""
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    names = json.loads(fake_id2label_bytes())
+    names["1"] = "renamed"
+    id2label_path("test", base=tmp_path).write_bytes(json.dumps(names).encode())
+
+    problems = verify_split("test", base=tmp_path)
+    assert any("ingredient names changed" in problem for problem in problems)
+
+
+def test_verify_detects_deleted_ingredient_names(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    id2label_path("test", base=tmp_path).unlink()
+    assert any("not found" in problem for problem in verify_split("test", base=tmp_path))
+
+
+def test_verify_reports_an_old_manifest_as_re_downloadable(
+    fake_datasets: Callable[..., list[dict[str, object]]], tmp_path: Path
+) -> None:
+    """A manifest from before the names were pinned must not raise inside a job."""
+    fake_datasets()
+    download_split("test", base=tmp_path)
+    payload = json.loads(manifest_path("test", base=tmp_path).read_text())
+    del payload["num_labels"]
+    manifest_path("test", base=tmp_path).write_text(json.dumps(payload))
+
+    problems = verify_split("test", base=tmp_path)
+    assert len(problems) == 1
+    assert "re-download" in problems[0]
 
 
 def test_manifest_hash_matches_what_was_written(

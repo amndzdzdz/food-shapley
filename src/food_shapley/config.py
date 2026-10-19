@@ -14,7 +14,27 @@ from dataclasses import MISSING, asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-__all__ = ["ExperimentConfig", "config_fingerprint", "load_config"]
+__all__ = ["BACKGROUND_MODES", "ExperimentConfig", "config_fingerprint", "load_config"]
+
+#: How the non-ingredient part of the frame -- plate, table, cutlery, a mug --
+#: is treated. One field rather than two booleans, because the combinations are
+#: mutually exclusive and a pair of flags would let a run request a
+#: contradiction.
+#:
+#: ``"player"``
+#:     The scene is a coalition player in its own right. ``v(N)`` is then the
+#:     unmodified photograph and ``v(empty)`` a fully blurred frame, and the
+#:     scene's contribution is *measured* instead of assumed. Costs one player,
+#:     so twice the coalitions.
+#: ``"visible"``
+#:     The scene stays sharp in every coalition and is never attributed.
+#:     Shapley values are contributions *given the scene*; ``v(N)`` is the
+#:     photograph, but a telltale mug silently inflates ``v(empty)``.
+#: ``"hidden"``
+#:     The scene is blurred in every coalition. ``v(empty)`` is a fully blurred
+#:     frame, but ``v(N)`` is **not** the photograph, so the decomposition
+#:     explains a score the model never assigned to a real image.
+BACKGROUND_MODES: frozenset[str] = frozenset({"player", "visible", "hidden"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,8 +52,24 @@ class ExperimentConfig:
         split: Dataset split, e.g. ``"test"``.
         model: Model identifier of the scored model, e.g. an open_clip checkpoint.
         removal: Segment-removal operator, e.g. ``"blur"`` or ``"token-drop"``.
+        blur_radius: Gaussian blur radius in pixels for the ``"blur"`` operator.
+            Part of the claim, not a cosmetic setting: a Shapley value is always
+            "the contribution under *this* removal operator", and the radius is
+            what makes a hidden ingredient more or less recoverable.
+        background_mode: How the scene is treated; one of
+            :data:`BACKGROUND_MODES`. Measured over the test split, the scene
+            is 39 % of the model's input on average and the majority of pixels
+            in 30 % of images, so this is a substantive choice about what the
+            game is, not a rendering detail.
+        image_size: Side length of the model's square input, in pixels. Images
+            and masks are resized and centre-cropped to it together; see
+            :mod:`food_shapley.segments`. It must match the checkpoint named in
+            ``model``, so it is recorded rather than read off the checkpoint.
         max_players: Maximum number of coalition players per image after merging
             small segments and adding the "rest" player.
+        min_area_fraction: Ingredients covering less than this share of the
+            model's input are merged into the "rest" player. ``0.0`` keeps every
+            segment, however small.
         notes: Free-text provenance note; excluded from the fingerprint.
     """
 
@@ -43,7 +79,11 @@ class ExperimentConfig:
     split: str
     model: str
     removal: str
+    image_size: int
     max_players: int
+    min_area_fraction: float
+    blur_radius: float
+    background_mode: str
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -58,9 +98,48 @@ class ExperimentConfig:
         if self.seed < 0:
             msg = f"config field 'seed' must be non-negative, got {self.seed}"
             raise ValueError(msg)
+        if self.image_size < 1:
+            msg = f"config field 'image_size' must be >= 1, got {self.image_size}"
+            raise ValueError(msg)
         if self.max_players < 1:
             msg = f"config field 'max_players' must be >= 1, got {self.max_players}"
             raise ValueError(msg)
+        if not 0.0 <= self.min_area_fraction <= 1.0:
+            got = self.min_area_fraction
+            msg = f"config field 'min_area_fraction' must be in [0, 1], got {got}"
+            raise ValueError(msg)
+        if self.blur_radius <= 0:
+            # Zero would make every coalition identical to the original image,
+            # so every Shapley value would be zero and efficiency would still
+            # hold -- a silent way to produce a meaningless run.
+            msg = f"config field 'blur_radius' must be positive, got {self.blur_radius}"
+            raise ValueError(msg)
+        if self.background_mode not in BACKGROUND_MODES:
+            allowed = ", ".join(sorted(BACKGROUND_MODES))
+            mode = self.background_mode
+            msg = f"config field 'background_mode' must be one of {allowed}, got {mode!r}"
+            raise ValueError(msg)
+        if self.background_is_player and self.max_players < 2:
+            # One slot is the scene, so a cap of 1 would leave no ingredient.
+            msg = (
+                "config field 'max_players' must be >= 2 when background_mode is "
+                f"'player', because the scene occupies one slot; got {self.max_players}"
+            )
+            raise ValueError(msg)
+
+    @property
+    def background_is_player(self) -> bool:
+        """Whether the scene gets a coalition slot of its own."""
+        return self.background_mode == "player"
+
+    @property
+    def background_stays_sharp(self) -> bool:
+        """Whether non-player pixels are left unblurred by the removal operator.
+
+        False in ``"player"`` mode: there the scene *is* a player, so it is
+        blurred or not according to the coalition like everything else.
+        """
+        return self.background_mode == "visible"
 
     def to_dict(self) -> dict[str, Any]:
         """Return the configuration as a plain, JSON-serialisable dictionary."""
