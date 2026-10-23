@@ -3,10 +3,21 @@
 Plan: [docs/week-01.md](../docs/week-01.md) · Entry format:
 [insights/README.md](README.md)
 
-**Nine entries, all about the input data, how it becomes coalition players,
-and how a coalition is rendered. No experiment has been run and no model has
-been evaluated.** W01-03 partially contradicts W01-02 and W01-09 partially
-supersedes W01-06; read both pairs.
+**Twelve entries. W01-01 to W01-09 are about the input data, how it becomes
+coalition players, and how a coalition is rendered. W01-10 is the first entry
+in which a model was actually loaded and run: it records the value function's
+behaviour on 200 unmasked images, a checkpoint misconfiguration that would
+have corrupted 37 % of targets, and the limits of a borrowed dish
+vocabulary. W01-11 is the first entry containing an actual Shapley value: the
+coalition game exists, exact values over three real images satisfy efficiency
+to the last bit, and the one thing that is *not* exact — CLIP's float32
+forward pass under rebatching — is bounded there. W01-12 is about the first
+numbers the project intends to *store*: `shapiq` returns k-SII in a shape
+that depends on the values rather than on the game, so every index block is
+rebuilt to a fixed shape before it is written. No experiment in the `PLAN.md`
+sense has been run: three images are a correctness check, not a result.**
+W01-03 partially contradicts W01-02, W01-09 partially supersedes W01-06, and
+W01-12 corrects a generalisation in W01-11; read all three pairs.
 
 ## Questions this week's entries should answer
 
@@ -18,12 +29,21 @@ Derived from the Week 1 plan; each needs a dated entry once evidence exists.
   first thing to record, because every later run inherits these settings.
   **Still open: nothing has been submitted.**
 - Does the efficiency check (`sum(SV) == v(N) − v(∅)`) hold, and at what
-  numerical tolerance?
+  numerical tolerance? **Answered by W01-11 and corrected by W01-12 for three
+  real images: the residual is `0.0`, `−4.441e-16`, `0.0` as task 1.6 will
+  compute it — six orders of magnitude inside the `1e-9` gate — provided both
+  ends are read from the same powerset evaluation. Not exactly zero in
+  general; W01-11's `0.0` came from a different summation order. Still open
+  over the whole split, which needs task 1.6.**
 - Does the visual check confirm that masked coalitions show what they claim to?
   Which coalitions were inspected? **Answered by W01-07: 19 coalitions over 5
   images, all correct, listed there by name.**
 - Is the log-probability value function sensible on obvious unmasked images?
-  What exactly was checked, and what was the outcome?
+  What exactly was checked, and what was the outcome? **Answered by W01-10:
+  checked on 200 unmasked images — top-1 confidence median 0.580 (min 0.167),
+  `v(N) − v(∅)` positive on 200/200 with median +4.13 nats, re-scoring
+  bit-identical. The value function is sound; the *prompt set* is not a good
+  fit for these photographs and confidence does not reveal when it misses.**
 - How many images exceeded `max_players` and had segments merged into "rest"?
   **Answered by W01-04 and confirmed through the real pipeline by W01-06:
   zero capped at `max_players = 10`; 3 images get a "rest" player from the
@@ -33,6 +53,689 @@ Derived from the Week 1 plan; each needs a dated entry once evidence exists.
 
 Record failures and surprises here as readily as successes — a failed masking
 check is one of the most valuable entries this week can contain.
+
+---
+
+## W01-12 — `shapiq` returns k-SII in a value-dependent shape: exactly-zero entries are dropped, including whole singletons
+
+- **Date:** 2026-10-23
+- **Status:** mixed, by part:
+  - *validated:* the four `shapiq` behaviours in §1–§3, each pinned by a test
+  - *validated (on three images, on CPU):* the two residual-scale measurements
+    in §4
+  - *preliminary:* that the densified storage format is the right one for
+    Milestone 2's cross-model comparison, which has not been attempted
+- **Plan reference:** docs/week-01.md, task 1.5 (`PLAN.md` step 4, "compute
+  exact SV, k-SII and Möbius via `shapiq.ExactComputer`; build in the two
+  checks now"); `PLAN.md`'s risk note, "catching a masking bug here is much
+  cheaper than after the full run"
+- **Run / artifact:** `configs/week01-clip-blur.toml`, fingerprint
+  **`9171f04cd6a0`** (was `0c2f69fe4d3a` before `interaction_order` was added
+  to `ExperimentConfig`; `configs/smoke.toml` moved `8ff0d4d5cbbc` →
+  `eb657bff090b` for the same reason) · commit `b0945bc` plus the uncommitted
+  working tree adding `indices.py`, `tests/unit/test_indices.py`,
+  `tests/unit/synthetic_game.py` and
+  `tests/integration/test_indices_on_real_images.py` · checkpoint
+  `open_clip/ViT-B-32-quickgelu/openai` · FoodSeg103 test split images
+  **32, 158, 242** · CPU, float32 · `shapiq` version as locked in `uv.lock`
+- **Fingerprint note, 2026-10-23 (same day, later).** Task 1.6 added
+  `max_images` to `ExperimentConfig`, which moved the fingerprints again:
+  `week01-clip-blur` `9171f04cd6a0` → **`deb3a76af736`** and `smoke`
+  `eb657bff090b` → **`4f6b612d9de8`**. The values above are left as written
+  because they identify the configuration this entry's numbers were measured
+  under. Nothing measured here changes — `max_images` selects *which* images a
+  run covers and does not touch any stored number — but the run directory a
+  future reader finds on disk will carry the newer name.
+
+### Observation
+
+#### 1. `shapiq` omits k-SII entries whose value is exactly zero
+
+The number of rows `ExactComputer(game)("k-SII", order=k)` returns is a
+function of **the values**, not of the game's size. On a 4-player synthetic
+game with weights `[1.0, 0.0, 300.0, 4000.0]` and a single interacting pair
+`(0, 2)`:
+
+| | Count |
+|---|---|
+| Subsets of size ≤ 2 of a 4-player game | 11 |
+| Rows actually returned | **6** |
+
+Returned: `(), (0,), (0,2), (0,3), (2,), (3,)`. **Missing: `(1,)`** — a
+player's own main effect — along with `(0,1)`, `(1,2)`, `(1,3)` and `(2,3)`.
+
+`SV` and `Moebius` came back dense on every game tried, but nothing in the
+API promises that, and the k-SII case proves the promise is not made.
+
+#### 2. The k-SII lookup is not in powerset order either
+
+For a 3-player game at order 2:
+
+```
+{(): 0, (0,2): 1, (0,): 2, (1,): 3, (2,): 4}
+```
+
+and for 4 players the key order is
+`[(), (0,2), (0,3), (0,), (1,2), (1,3), (1,), (2,3), (2,), (3,)]`. Neither is
+`shapiq.utils.powerset`'s ascending-size-then-lexicographic order, which
+W01-11 §4 recorded for coalitions. The `interaction_lookup` dict is the only
+authority on which row is which.
+
+#### 3. `InteractionValues.values` returns a fresh array on every access
+
+`result.values[i] += x` is a silent no-op. Found by writing a test fixture
+that perturbed a returned value to prove the efficiency check could fail, and
+watching it not fail. The fixture now substitutes its own object.
+
+#### 4. Two small real-data residuals that a synthetic game cannot show
+
+Both are the rebatching effect of W01-11 §3, seen from new angles:
+
+| Quantity | Image 32 | Image 158 | Image 242 |
+|---|---|---|---|
+| Normalised `v(∅)` inside the powerset | `1.56e-06` | `−2.40e-06` | `6.19e-06` |
+
+and `v(N)` inside the powerset differs from `target.log_prob` by between
+`2.1e-08` and `5.5e-07` nats across the same three images.
+
+The first means `span = v(N) − v(∅)` is **not** interchangeable with
+`v(N)` on real data, though it is on any synthetic fixture. The second means
+`baseline + span == target.log_prob` holds to ~1e-07, not bit for bit —
+even though scoring the grand coalition *alone* reproduces it exactly
+(W01-11, "Relation to earlier entries").
+
+#### 5. Mutation testing: three rounds, four survivors, all now killed
+
+The two new suites were checked by deliberately breaking the production code:
+
+| Mutation | Initially caught? |
+|---|---|
+| Efficiency summed over *all* Shapley rows, including the empty set | **no** → killed by a fixture that shifts only the empty-set entry |
+| Möbius block stored truncated to `interaction_order` | yes |
+| `span` read as `v(N)` instead of `v(N) − v(∅)` | **no** on synthetic, yes on real → killed by a new integration test |
+| A partial (non-powerset) coalition evaluation accepted | **no** → killed by a computer stub that hides half the lookup |
+| k-SII rows read in returned order rather than densified | yes (§1, §2) |
+
+The third is the interesting one: the mutant is genuinely undetectable on a
+fixture where `v(∅)` normalises to exactly 0, and detectable on every real
+image, for the reason in §4.
+
+### Context
+
+Task 1.5 is the first place the project stores a number it intends to report.
+Everything before it computed values and threw them away. The question this
+entry answers is not "are the indices correct" — `tests/unit/test_indices.py`
+settles that against a closed-form game — but "does the *stored shape* mean
+the same thing from one image to the next".
+
+### Setup
+
+`compute_indices(game, order=config.interaction_order)` over the full
+powerset of each image, via one `shapiq.ExactComputer` shared by all three
+index families (§1 of the evidence below confirms the game is evaluated
+`2**n` times in total, not `3 × 2**n`). `interaction_order` is clamped to
+`min(order, n_players)`, which W01-11's follow-up flagged as necessary.
+Synthetic measurements use `tests/unit/synthetic_game.py`, a game whose value
+is a known function of the coalition it renders.
+
+### Evidence
+
+- `tests/unit/test_indices.py` — 41 tests, no model involved.
+  `test_shapiq_drops_exactly_zero_k_sii_entries`,
+  `test_the_k_sii_lookup_is_not_in_powerset_order` and
+  `test_a_dropped_entry_is_restored_as_zero` pin §1 and §2; the `Perturbed`
+  stand-in in that file documents §3.
+- `tests/integration/test_indices_on_real_images.py` — 24 tests against the
+  real checkpoint (`-m gpu`). §4's two measurements are assertions there:
+  `test_the_normalised_empty_coalition_is_near_zero_but_not_zero` and
+  `test_the_baseline_recovers_the_target_s_own_log_probability`.
+- Full suite **534 passed**; `ruff check`, `ruff format --check` and `mypy`
+  clean.
+
+### Interpretation
+
+§1 is the finding that changed the design. Read naively, a downstream
+statistic like "how many ingredient pairs interact?" would be computed over a
+row set that *shrinks when the answer is zero* — the exact direction that
+inflates an interaction rate, and with no symptom: every value present would
+be correct. `indices.py` therefore rebuilds every block to a fixed shape
+determined by `n_players` and `order`, with omissions restored as `0.0` and
+any unexpected key raising. The shape of a stored file is now a function of
+the configuration alone.
+
+§4 is interpretation-light: the numbers are ~1e-06 against a ~4-nat span, and
+nothing this project would report is sensitive to them. What they buy is the
+knowledge that two tolerances in the suite are load-bearing rather than
+defensive, which is the difference between a check that can fail and a check
+that has been pre-widened into decoration.
+
+### Limitations and alternative explanations
+
+- §1 was found on a *synthetic* game constructed to have an inert player.
+  Real images are unlikely to produce an exactly-zero interaction, so the
+  practical blast radius may be small — but "unlikely" is not "never", and
+  the densification costs nothing.
+- The 6-of-11 figure is one game at one order. Whether the omission rule is
+  "exactly zero" or some internal threshold was not determined; the fix does
+  not depend on which.
+- §4's residuals are three images on CPU, inheriting every limitation
+  W01-11 lists. The GPU question is still unmeasured.
+- §5 is mutation testing by hand, not a tool. It establishes that five
+  specific bugs are caught, not that the suite is complete.
+
+### Implications
+
+- Stored `.npz` files have a shape fixed by `(n_players, interaction_order)`.
+  Any analysis may index them positionally against
+  `powerset(range(n), max_size=order)` without consulting `shapiq`.
+- `interaction_order` is now an `ExperimentConfig` field and therefore in the
+  run fingerprint, which is why both configs' fingerprints moved. The
+  pre-1.5 values `0c2f69fe4d3a` and `8ff0d4d5cbbc` remain correct for every
+  entry written before this one.
+- W01-11's prediction that the task-1.6 residual "should be exactly `0.0`
+  every time" is **too strong**; see the correction at the head of that
+  entry. `DEFAULT_EFFICIENCY_TOLERANCE = 1e-9` is the gate, with six orders
+  of magnitude of measured headroom.
+- Any future check of this kind should be tried on real values before it is
+  trusted, because §4 §5 together show a synthetic fixture can make a real
+  bug invisible.
+
+### Relation to earlier entries
+
+- **Corrects W01-11 §1** on the exactness of the residual — not the
+  measurement, which stands, but the generalisation drawn from it. See the
+  dated correction there.
+- Uses **W01-11 §3**'s rebatching bound to explain both residuals in §4.
+- Depends on **W01-09**: `ingredient_indices` is stored alongside every
+  decomposition so that an ingredient-level statistic cannot silently count
+  the scene.
+
+### Follow-up questions
+
+- Does any real image produce an exactly-zero k-SII entry, and therefore a
+  densified row that is a genuine zero rather than a present one? Worth a
+  count during task 1.6; it is one line and it bounds §1's practical reach.
+- Is `shapiq`'s omission rule a hard zero or a threshold? Only matters if a
+  near-zero value is being dropped, which would be a silent loss rather than
+  a shape change.
+- Does the residual stay inside `1e-9` at 11 players? Six is the largest
+  measured, and the error accumulates over `2**n` terms.
+
+---
+
+## W01-11 — Efficiency holds exactly on real games; the only inexact thing is CLIP's response to rebatching, at ~8e-06 nats
+
+> **Correction, 2026-10-23 (W01-12).** §1's measurement stands, but the
+> generalisation does not: the residual is exactly `0.0` only for the
+> particular summation W01-11 used — reading `shapiq`'s own Shapley dict.
+> Computing it as task 1.6 will, by summing the *densified* main-effect
+> vector, gives `0.0`, `−4.441e-16`, `0.0` on the same three images. The
+> difference is float accumulation order, six orders of magnitude inside the
+> `1e-9` tolerance. The follow-up below that predicts "exactly `0.0` every
+> time" in task 1.6 should be read as "inside `DEFAULT_EFFICIENCY_TOLERANCE`".
+
+- **Date:** 2026-10-20
+- **Status:** mixed, by part:
+  - *validated:* exact efficiency on three real games, at zero tolerance
+  - *validated (as a bound on this sample, on CPU):* the size of the
+    rebatching drift and its effect on Shapley values
+  - *preliminary:* that the bound transfers to GPU inference, which has not
+    been measured because nothing has run on the cluster
+- **Plan reference:** docs/week-01.md, task 1.4 (`PLAN.md` step 3); `PLAN.md`'s
+  risk note for that step, "coalition ordering must match what `shapiq`
+  expects internally"; the efficiency check that gates task 1.6
+- **Run / artifact:** `configs/week01-clip-blur.toml`, fingerprint
+  **`0c2f69fe4d3a`** · commit `b0945bc` plus the uncommitted working tree
+  adding `game.py`, `tests/unit/test_game.py` and
+  `tests/integration/test_game_on_real_images.py` · checkpoint
+  `open_clip/ViT-B-32-quickgelu/openai`, `parameter_sha256 a3ce3c4a2245…` ·
+  FoodSeg103 test split images **32, 158, 242** (chosen for small player
+  counts, so the whole powerset is affordable on CPU) · CPU, float32 ·
+  diagnostics `/tmp/diag_eff2.py`, `/tmp/diag_eff3.py` (not committed; the
+  numbers below are re-asserted by the integration tests, which are)
+
+### Observation
+
+#### 1. Exact Shapley values satisfy efficiency with no tolerance at all
+
+Full powerset, real CLIP, exact `shapiq.ExactComputer`:
+
+| Image | Players | `v(N) − v(∅)` | `sum(SV) − (v(N) − v(∅))` |
+|---|---|---|---|
+| 32 | 6 | 7.337981364127453 | **`+0.000e+00`** |
+| 158 | 3 | 3.1933557565675375 | **`+0.000e+00`** |
+| 242 | 3 | 4.017425444613295 | **`+0.000e+00`** |
+
+Not "within tolerance" — bit-identical. This is `PLAN.md`'s first validity
+check, and the strongest form of it available.
+
+#### 2. It only holds exactly if both ends come from the same evaluation
+
+The first version of the test read `v(N)` from a fresh one-row call instead,
+and **failed**. Same game, same coalition, different batch:
+
+| Image | `sum(SV) − (v(N) − v(∅))`, `v(N)` re-scored alone |
+|---|---|
+| 32 | `−1.014e-06` |
+| 158 | `+2.345e-06` |
+| 242 | `+6.170e-06` |
+
+The same effect shows up in `shapiq`'s own bookkeeping: after an exact
+computation `ExactComputer.baseline_value` is `1.56e-06`, `−2.40e-06` and
+`6.19e-06` rather than the exactly `0.0` that normalisation should produce.
+It is the `v(∅)` computed at construction time, in a batch of one, compared
+against the `v(∅)` sitting in row 0 of the powerset batch.
+
+#### 3. CLIP's float32 forward pass is not batch-invariant
+
+Scoring every coalition of each image at `chunk_size=1` and at
+`chunk_size=32`:
+
+| Image | Max abs difference, coalition values | Max abs difference, exact Shapley values | Relative to `v(N) − v(∅)` |
+|---|---|---|---|
+| 32 | 8.124e-06 | 1.839e-06 | 2.5e-07 |
+| 158 | 7.444e-06 | 2.845e-06 | 8.9e-07 |
+| 242 | 7.316e-06 | 2.441e-06 | 6.1e-07 |
+
+Within a *fixed* batching the game is bit-deterministic: re-scoring the same
+matrix twice gives `0.00e+00` difference, as W01-10 found for the value
+function. The drift is entirely a function of what a coalition is batched
+with.
+
+#### 4. The coalition-ordering risk `PLAN.md` flags is real and is not detectable numerically
+
+A game that scores row `i` as some *other* subset, consistently, still
+satisfies efficiency exactly — §1 would pass unchanged. The unit suite
+therefore does not check numbers against numbers: it runs a value function
+that recovers the coalition from the rendering by byte-matching against every
+coalition rendered independently in the test, with deliberately asymmetric
+per-player weights, and compares `shapiq`'s output to the closed form. Four
+deliberate mutations were introduced to confirm the suite can fail: reversing
+the column convention, sorting rows by coalition size, subtracting the
+baseline twice, and replacing the baseline with `0.0`. The first three were
+caught immediately. **The fourth was caught by only one test, and that test
+was about call counts, not about values** — because the fixture had
+`v(∅) == 0`, which makes "subtract the baseline" and "subtract nothing"
+indistinguishable. Fixing the *fixture* (`base = −5.25`, in the range W01-10
+measured for real images) brought it to five failing tests.
+
+For the record, `shapiq.utils.powerset` enumerates **ascending by coalition
+size, then lexicographically** — `(), (0,), (1,), (2,), (0,1), (0,2), (1,2),
+(0,1,2)` — not by binary counting. Nothing in `game.py` depends on that, which
+is the point, but anyone matching a stored value vector against an index will
+need it.
+
+### Context
+
+Task 1.4 joins the three halves built in 1.2 and 1.3 — players, the blur
+operator, the value function — into a `shapiq.Game`. Until this entry no
+Shapley value had ever been computed in this project, so `PLAN.md`'s
+efficiency check had never actually been run against anything.
+
+### Setup
+
+`IngredientGame.for_image` builds one game per image: target fixed by the
+model's top-1 on the unmasked photograph, `v(S) = log p(target | only S
+visible)`, blur-removal operator, `normalize=True` with an explicit
+`normalization_value = v(∅)`. Coalitions are rendered and scored in chunks of
+32. Measurements on CPU, float32, three images, full powerset (64 + 8 + 8 =
+80 coalitions).
+
+### Evidence
+
+- `tests/unit/test_game.py` — 26 tests, all passing, no model involved
+- `tests/integration/test_game_on_real_images.py` — 22 tests, all passing
+  against the real checkpoint (`-m gpu`); §1 and §3 are assertions in there,
+  so they are re-checked rather than merely recorded
+- Full suite **463 passed** (420 without the `gpu` marker); `ruff check`,
+  `ruff format --check` and `mypy` clean
+
+### Interpretation
+
+Efficiency passing at zero tolerance says the game's arithmetic and `shapiq`'s
+agree completely. It says *nothing* about whether the coalitions are labelled
+correctly, which is why §4 exists and why the unit suite is built the way it
+is; a permuted game passes §1 perfectly.
+
+§3 is a limitation of the measurement apparatus, not of the method. 8e-06 nats
+against a ~4-nat span is ~2e-06 relative, four orders of magnitude below any
+difference between two ingredients that this project would report. It is,
+however, not zero, and the correct response was to measure it rather than to
+widen a tolerance until the test went green — the claim "`chunk_size` is a
+throughput knob" is now backed by a number instead of by an assumption.
+
+### Limitations
+
+- **Three images.** Chosen for small player counts, not sampled. §1 and §3 are
+  correctness properties that should hold for every image, but "should" is not
+  "was measured".
+- **CPU only.** GPU kernels reduce in different orders and often use TF32;
+  the drift in §3 could plausibly be larger there. Nothing has run on the
+  cluster, so this is unmeasured.
+- §3 compares two chunk sizes, not two machines. Cross-machine reproducibility
+  of a stored value vector is a stronger property and has not been tested.
+- The entry says nothing about whether the Shapley values are *meaningful* —
+  only that they are correctly computed. The target is still the borrowed
+  top-1 of W01-10, and every number here explains the model's prediction
+  rather than the dish.
+
+### Implications
+
+- `chunk_size` stays out of `ExperimentConfig`, and therefore out of the run
+  fingerprint, with §3 as the justification. Two runs differing only in
+  batching are the same experiment.
+- Any future efficiency check — in task 1.6, and in the Milestone 2
+  comparisons — must read `v(N)` and `v(∅)` out of the same evaluation, or it
+  is measuring §3 instead.
+- Stored results should record the chunk size used anyway, so that a future
+  bit-level comparison that fails can be attributed rather than investigated.
+- When task 1.6 runs the whole split, the per-image efficiency residual is
+  worth storing: it should be exactly `0.0` every time, and anything else is a
+  bug rather than noise.
+
+### Relation to earlier entries
+
+- Extends **W01-10**: determinism under re-scoring, measured there for the
+  value function, survives into the game — but only at fixed batching, which
+  W01-10 did not distinguish.
+- Depends on **W01-09**: `v(N)` equals the target's own log-probability *bit
+  for bit* only because the scene is a player, so the grand coalition's
+  rendering is the photograph. That identity is asserted in the integration
+  suite and passes on all three images.
+- Does not contradict anything.
+
+### Follow-up questions
+
+- Does the drift in §3 hold at the same order on GPU, and does TF32 need to be
+  disabled for stored results to be comparable across machines?
+- Is the efficiency residual exactly `0.0` across all 2,135 images, or does it
+  degrade with player count? Six players is the largest game measured here;
+  the split reaches 11 (`max_players = 10` ingredients plus the scene).
+- `ExactComputer('k-SII', order=2)` raises `IndexError` on a one-player game.
+  No image in this split has one: re-running player construction over all
+  2,135 images under the current config gives 2–11 players (2 on 7 images, 11
+  on 1, 91,828 coalitions in total — confirming the figure in W01-06's
+  superseding note). Task 1.5 must still clamp `order` to
+  `min(order, n_players)` rather than rely on a dataset property.
+
+---
+
+## W01-10 — The value function works and the game is non-degenerate, but the dish target itself is borrowed and cannot be filtered
+
+- **Date:** 2026-10-19
+- **Status:** mixed, by part — stated separately because they do not stand or
+  fall together:
+  - *validated:* the QuickGELU mismatch and its effect on the target; the
+    dynamic range of the game; determinism of re-scoring
+  - *validated (as a statement about this sample):* the top-1 confidence
+    distribution; the vocabulary-coverage figures
+  - *inconclusive, leaning negative:* whether confidence can be used to filter
+    inapt targets — it cannot, and no replacement filter is known
+  - *preliminary:* the single-ingredient recovery signal
+- **Plan reference:** docs/week-01.md, task 1.3 (`PLAN.md` step 2); success
+  criterion "Prompt sanity check"
+- **Run / artifact:** `configs/week01-clip-blur.toml`, fingerprint
+  **`0c2f69fe4d3a`** (was `f6f33ec14b1f` before `prompt_template` and the
+  checkpoint tag became fields) · commit `b0945bc` plus the uncommitted working
+  tree adding `prompts.py`, `scoring.py`, `value.py` · checkpoint
+  `open_clip/ViT-B-32-quickgelu/openai`, `parameter_sha256
+  a3ce3c4a2245ed2a572d2eb864a62f0a4ca62b3123b83f8a52a523c3b1dd32a4`, open_clip
+  3.3.0, torch 2.14.1+cu130 · prompt set `ethz/food101@83488de741c1`,
+  `names_sha256 92d5cd07a785…` · FoodSeg103 test split, manifest
+  `4d2b3127f607…` · 200 images, seeded sample, CPU
+
+### Observation
+
+#### 1. The checkpoint name in the config was running the weights through the wrong non-linearity
+
+`ViT-B-32/openai` — the name the configs carried from the start — emits only
+this, and then proceeds:
+
+```
+UserWarning: QuickGELU mismatch between final model config (quick_gelu=False)
+and pretrained tag 'openai' (quick_gelu=True)
+```
+
+OpenAI's CLIP weights were trained with QuickGELU; since open_clip 2.24 the
+plain `ViT-B-32` config uses standard GELU. Scoring 40 real test images under
+both architectures:
+
+- **The two disagree on the top-1 dish for 15 of 40 images (37.5 %).**
+- The top-1 *is* the target of the decomposition (see §2), so 37 % of images
+  would have had their Shapley values computed for a dish the correctly
+  configured model does not predict.
+
+#### 2. There is no ground-truth dish, so the target is the model's own top-1
+
+FoodSeg103 annotates ingredients. It has **no dish label in any column** —
+features are `image`, `label` (a mask image), `classes_on_image`, `id`. The
+value function therefore scores
+
+> `v(S) = log softmax(CLIP logits over the 101 Food-101 prompts)[ŷ]`,
+> `ŷ = argmax` on the **unmasked** photograph.
+
+#### 3. On 200 unmasked images the model is confident and the game is non-degenerate
+
+| Quantity | Result |
+|---|---|
+| top-1 probability | median **0.580**, mean 0.581, min **0.167** |
+| images with top-1 < 0.10 | **0 / 200** |
+| images with top-1 < 0.25 | 19 / 200 (9.5 %) |
+| `v(N) − v(∅)` | **positive on 200 / 200**, median **+4.13**, mean +4.18 nats |
+| re-score of the same images | **bit-identical**, max abs difference `0.00e+00`; target stable |
+
+#### 4. Blur usually does remove the evidence — but there is a tail
+
+Probability assigned to the target on the **fully blurred** frame, i.e. `v(∅)`
+exponentiated, against the 1/101 = 0.0099 chance level:
+
+| Quantity | Result |
+|---|---|
+| median `p(target \| blurred)` | **0.0071** — *below* chance |
+| images above 0.10 | **5 / 200 (2.5 %)** |
+| maximum | **0.416** |
+
+#### 5. The prompt set does not fit the photographs, and confidence does not reveal when
+
+| Quantity | Result |
+|---|---|
+| distinct Food-101 classes used across 200 images | **66 / 101** |
+| most frequent target | **`pork_chop`, 26 / 200 = 13 %** |
+| worst case inspected | a frame containing cake → `baby_back_ribs` at **p = 0.79** |
+
+`pork_chop` fires on plates of chicken and rice. The confidence distribution in
+§3 and the misfires here are **not separable**: the minimum confidence over 200
+images is 0.167, so no threshold rejects the bad cases without rejecting almost
+everything, and the worst case observed is also one of the most confident.
+
+#### 6. Preliminary: one ingredient alone typically recovers most of the span
+
+Fraction of `v(N) − v(∅)` recovered by unblurring a single player alone,
+i.e. `(v({i}) − v(∅)) / (v(N) − v(∅))`:
+
+| Quantity | Result |
+|---|---|
+| best single **ingredient** (scene excluded) | median **0.627** |
+| images where the best ingredient recovers ≥ 0.5 | **121 / 200 (60.5 %)** |
+| the **scene** player alone | median **−0.080** |
+| images where the scene beats every ingredient | 23 / 200 (11.5 %) |
+| corr(player area fraction, fraction recovered) | **+0.259** |
+
+The scene figure is negative: unblurring only the plate, table and surroundings
+makes the target *less* likely than a fully blurred frame.
+
+### Context and motivation
+
+Task 1.3's acceptance criterion is a sanity check: "CLIP ranks the
+ground-truth dish plausibly on a few obvious unmasked images". Writing the
+value function forced the prior question — *which* dish — and the criterion
+turned out to presuppose an annotation this dataset does not have. The checks
+above are what was run instead. §1 was not sought: it came from reading a
+warning instead of letting `filterwarnings = ["error"]` hide it in tests while
+production code ignored it.
+
+### Setup
+
+- `food_shapley.value.DishValueFunction.from_config`, real checkpoint, CPU,
+  no GPU required. `log_softmax` row-wise in **float64**, because efficiency
+  will sum up to 2^11 = 2,048 terms per image.
+- 200 images drawn by the config seed; the three named integration images (32,
+  158, 242) are fixed by index.
+- §1 scored the same 40 images twice, once per architecture, everything else
+  held equal.
+- §6 required 1 + P forward passes per image (empty coalition, grand
+  coalition, each singleton) — **not** a Shapley computation; `shapiq` has not
+  been wired in yet.
+
+### Evidence
+
+- `tests/integration/test_value_on_real_images.py` — **21 tests, all passing**
+  against the real checkpoint (`-m gpu`, 21.23 s on CPU). Includes
+  `test_the_underspecified_openai_name_is_refused`, which asserts
+  `ViT-B-32/openai` raises rather than warns, and the three named top-1
+  assertions.
+- `tests/unit/test_scoring.py` (36 tests) checks the logit formula in closed
+  form against a stub model with `logit_scale = log(100)`, batch invariance,
+  and the geometry contract. `tests/unit/test_value.py` (30) checks
+  `log_softmax` against `torch.log_softmax` and the target/tie-breaking rules.
+  `tests/unit/test_prompts.py` (32) covers the manifest and hash paths offline
+  against a fake `datasets` module.
+- Full gate run: `uv run ruff check . && uv run ruff format --check . &&
+  uv run mypy && uv run pytest` — **415 tests pass** (394 of them without the
+  `gpu` marker); `pre-commit run --all-files` — all 12 hooks pass.
+- `uv run python -m food_shapley.scoring --config configs/week01-clip-blur.toml`
+  prints the checkpoint provenance quoted in the header, and is the step
+  `slurm/prepare.sh` now uses to warm the weight cache on a login node.
+
+### Interpretation
+
+*Interpretation, not measurement.*
+
+- **The value function is fit for purpose and the game is worth computing.**
+  §3's "positive on 200/200, median +4.13 nats" is the property the whole
+  decomposition rests on: if blur had failed to move the score, every Shapley
+  value would have been noise around zero. It did not.
+- **§1 is the most important result in this entry**, and it is an engineering
+  result rather than a scientific one. A 37 % disagreement rate on the target
+  would have invalidated roughly a third of every per-ingredient number,
+  undetectably — the efficiency check would have passed perfectly, because a
+  game built on the wrong target is still internally consistent. This is the
+  same class of silent failure as the mask-misalignment risk in W01-05, and it
+  arrived as a warning rather than an error. Milestone 2 loads several
+  checkpoints, so this is now a hard failure in `ClipScorer.load`.
+- **§5 is the real limitation of the Week-1 design.** The pipeline answers
+  "which ingredients explain the model's prediction", which is a well-posed
+  question. It does *not* answer "which ingredients explain the dish", because
+  for an unknown fraction of images the predicted dish is not the dish. I
+  expected confidence to bound that fraction; it does not, which means the
+  fraction is currently **unmeasured** rather than small.
+- **§4 refines W01-07's silhouette confound rather than confirming or refuting
+  it.** The median blurred frame scores *below* chance, so blur is doing its
+  job on most images — which is better than W01-07's visual impression
+  suggested. But 2.5 % of images retain > 0.10 and one retains 0.416, so the
+  confound is real and confined to a tail, not pervasive and not absent.
+- **§6 is a genuine first signal for RQ1** and it points toward "one telltale
+  ingredient" over "a genuine combination": a median of 0.627 of the span from
+  a single ingredient is a lot. It is also exactly the kind of number that a
+  confound could manufacture, so it is marked preliminary and the two obvious
+  confounds are measured rather than waved at. The scene result is a useful
+  negative control: if the model were merely responding to *how much of the
+  frame is sharp*, the scene — 39 % of the pixels (W01-09) — would score high.
+  It scores slightly negative.
+
+### Limitations and alternative explanations
+
+- **§6 is not a Shapley value.** `v({i}) − v(∅)` is a singleton marginal, which
+  equals a Shapley value only in a game with no interactions — precisely the
+  thing this project exists to measure. Taking it as evidence about main
+  effects versus interactions is circular; it is reported as "a single
+  ingredient suffices to recover the score", which is a statement about the
+  value function, not a decomposition. The real answer waits for task 1.5.
+- **The area correlation of +0.259 is weak but not nothing.** It leaves open
+  that part of §6 is "bigger regions carry more pixels", and `r` over 200
+  images with a bounded response is a crude instrument. A size-matched
+  comparison would be better.
+- **200 images of 2,135, one checkpoint, one prompt template, one removal
+  operator.** Every number here is conditional on all four. The template was
+  taken from CLIP's own Food-101 prompt (not tuned), so template sensitivity
+  is entirely unmeasured.
+- **§4 does not test what W01-07 asked for.** W01-07's follow-up was to compare
+  `v(∅)` against a **uniform-grey image**; this compares it against the
+  **1/101 uniform-probability chance level**, which is a different and weaker
+  control. A grey-image baseline would isolate "blur leaks the silhouette" from
+  "this dish is a priori likely"; it has not been run.
+- **"Plausible" in §5 is my judgement from 224 px panels**, on a handful of
+  images, with no dish ground truth — the same weakness as W01-08. The 13 %
+  `pork_chop` rate is a measurement; the claim that it is *wrong* on chicken
+  and rice is an inspection of a few of those 26 images.
+- **§1's 37.5 % is 15 of 40 images**, so its confidence interval is wide
+  (roughly 23–54 %). The qualitative conclusion — "this changes the target on a
+  large fraction of images" — is robust to that; the number should not be
+  quoted as precise.
+- No Shapley value, interaction index or efficiency check exists yet. Nothing
+  here says the decomposition is correct, only that there is a non-degenerate
+  game to decompose.
+
+### Implications
+
+- **Every result must be framed as explaining the model's prediction**, not the
+  dish. The paper needs this sentence explicitly; it is a scope statement, not
+  a caveat to bury.
+- **The target is model-dependent**, so Milestone 2 cannot compare per-class
+  values across model families — two models may be decomposing different
+  dishes on the same photograph. It must compare interaction *structure*
+  (main-effect share, k-SII distribution), which is well defined regardless of
+  which dish each model chose. This constrains the compositionality index
+  before it is designed.
+- **Store `ŷ`, its probability, and the checkpoint's `parameter_sha256` in
+  every per-image `.npz`.** Without the target, a stored game cannot be
+  interpreted at all; without the weight hash, §1 could recur unnoticed across
+  a resubmission.
+- **A dish-labelled dataset is the highest-value fix available** and it is
+  cheap relative to its benefit: it would convert §5 from an unmeasured
+  limitation into a measured accuracy figure, and allow the "model is right"
+  and "model is wrong" populations to be analysed separately. Worth raising
+  before Milestone 2 commits to Food-101.
+- `slurm/prepare.sh` must cache the checkpoint on the login node (step 5, now
+  implemented): §1's guard raises at load time, and a compute node with no
+  network cannot recover from either a missing weight file or a bad name.
+
+### Relation to earlier entries
+
+- **W01-07's follow-up 3** ("quantify the silhouette confound once a model
+  exists") is **partially** addressed by §4 — see the limitation above; the
+  grey-image baseline it actually asked for is still open.
+- **W01-09's follow-up 2** ("check whether the scene's value correlates with
+  its area") is **pre-answered in the negative** by §6: the scene's singleton
+  marginal is slightly *negative* at a median of −0.080 despite being 39 % of
+  the frame, which is evidence against "the model responds to how much of the
+  frame is blurred". W01-09's follow-up 1 — the scene's actual Shapley value
+  and its interactions — still needs task 1.5.
+- **W01-08** (ingredient names are sometimes wrong) and §5 here are the same
+  kind of problem at two levels: FoodSeg103's ingredient names are unreliable
+  on an unmeasured minority, and Food-101's dish names are unreliable on an
+  unmeasured minority. Aggregate statistics that never read a name are immune
+  to both; every named claim inherits both.
+
+### Follow-up questions and next steps
+
+1. **Run the grey-image baseline** W01-07 asked for, on the same 200 images:
+   `p(target | uniform grey)` versus `p(target | blurred)`. Cheap, and it
+   separates silhouette leakage from dish priors. Do it before Week 2 reads
+   anything into small coalition values.
+2. **Bound §5.** Hand-label the dish on ~50 images, stratified by predicted
+   class, and report top-1 accuracy. That converts the headline limitation from
+   "unmeasured" to a number with an interval, which is what a reviewer will
+   ask for.
+3. **Re-measure §6 as a real Shapley decomposition** in task 1.5, and keep both
+   numbers: a large gap between "best singleton marginal" and "largest Shapley
+   value" is itself a measure of interaction.
+4. **Size-match the §6 comparison** — within-image, compare ingredients of
+   similar area fraction — to settle the +0.259 correlation.
+5. Record the per-image wall-clock cost of the real forward passes, which
+   W01-06's follow-up 1 asked for and this entry still does not supply (§6
+   ran 1 + P passes per image on CPU, which is not a useful estimate for the
+   GPU array job).
 
 ---
 

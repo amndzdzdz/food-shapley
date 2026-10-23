@@ -39,10 +39,13 @@ extension as Milestone 2.
 
 ## Project status
 
-**Infrastructure, data acquisition and the segment→player mapping. No model
-has been loaded, no experiment run, no result exists.** Week 1 task 1.2 is
-done; task 1.1 is still open on its cluster-submission step. What exists
-today:
+**Infrastructure, data acquisition, the segment→player mapping, the CLIP value
+function, the coalition game, the exact indices and the full-split job array.
+No experiment has been run and no result exists — exact Shapley values, k-SII
+and Möbius coefficients have been computed on three images, as a correctness
+check.** Week 1 tasks 1.2, 1.3, 1.4 and 1.5 are done; task 1.6's machinery is
+written and rehearsed locally but has never been submitted, because task 1.1
+is still open on its cluster-submission step. What exists today:
 
 | Area | Status |
 |---|---|
@@ -50,15 +53,20 @@ today:
 | Reproducibility scaffolding (config, seeding, run provenance, artifact layout) | Implemented |
 | Research dependencies (`shapiq`, `torch`, `open_clip`, `datasets`) | Installed and locked |
 | FoodSeg103 download + integrity verification (`food_shapley.download`) | Implemented; test split downloaded and verified |
-| Environment / GPU / dataset check (`food_shapley.envcheck`) | Implemented |
+| Environment / GPU / dataset / prompt-set check (`food_shapley.envcheck`) | Implemented |
 | SLURM toy job + array scaffolding (`slurm/`) | Written and locally simulated — **never submitted to a cluster** |
 | Weekly implementation plans (`docs/`) | Drafted from `PLAN.md` |
-| Insight log (`insights/`) | Dataset, player-construction and masking observations — **no experimental findings** |
+| Insight log (`insights/`) | Data, players, masking, the value function on 200 unmasked images, and the game's and indices' numerics on 3 — **no experimental result yet** |
 | FoodSeg103 loading (`food_shapley.dataset`) | Implemented |
 | Segment→player mapping, CLIP geometry (`food_shapley.segments`) | Implemented; alignment verified against torchvision **and** by eye. The scene is a player, never an ingredient ([W01-09](insights/week-01.md)) |
 | Blur removal operator + coalition renderer (`masking.py`, `preview.py`) | Implemented; visual check passed on 19 coalitions / 5 images |
-| CLIP value function, `shapiq.Game`, exact SV/k-SII/Möbius | Planned (Week 1, tasks 1.3–1.5) |
-| Full SLURM run, second removal operator, analysis | Planned (Weeks 1–2) |
+| Dish prompt set (`food_shapley.prompts`) | Implemented; 101 Food-101 names at a pinned revision, hashed. **Names only, no images** |
+| CLIP loading + zero-shot scoring (`food_shapley.scoring`) | Implemented; checkpoint fully pinned and weight-hashed, architecture mismatches are a hard error ([W01-10](insights/week-01.md)) |
+| Value function (`food_shapley.value`) | Implemented; `v(S) = log p(target dish)`, sanity-checked on 200 real unmasked images |
+| Coalition game (`food_shapley.game`) | Implemented; efficiency holds on 3 real images ([W01-11](insights/week-01.md)) |
+| Exact SV / k-SII / Möbius indices (`food_shapley.indices`) | Implemented; one `ExactComputer` evaluation per image, stored in a shape fixed by the config because `shapiq` drops zero-valued k-SII entries ([W01-12](insights/week-01.md)) |
+| Full-split job array (`food_shapley.run`, `slurm/run_array.slurm`) | Written and rehearsed on 3 real images — **never submitted; no run exists** |
+| Second removal operator, analysis | Planned (Weeks 1–2) |
 | Cross-model scaling, compositionality index, benchmarks | Planned (Weeks 4–6) |
 
 A complete repository skeleton is *not* evidence of publication-quality
@@ -115,12 +123,98 @@ the files against it, so a truncated download fails here rather than as a
 confusing model error later. Provenance and licensing:
 [`docs/datasets.md`](docs/datasets.md).
 
-To check that a machine can actually run the pipeline — imports, GPU, dataset
-integrity, downloading nothing:
+The dish prompt set — the 101 Food-101 class names, which *are* the softmax
+denominator of the value function — is fetched the same way, from dataset
+**metadata only**; none of Food-101's images are downloaded:
 
 ```bash
-uv run python -m food_shapley.envcheck --dataset-split test
+uv run python -m food_shapley.prompts            # ~12 kB, idempotent
+uv run python -m food_shapley.prompts --verify-only
 ```
+
+To check that a machine can actually run the pipeline — imports, GPU, dataset
+and prompt-set integrity, downloading nothing:
+
+```bash
+uv run python -m food_shapley.envcheck --dataset-split test --require-prompts
+```
+
+## The value function
+
+`v(S) = log p(target dish | image with only the segments in S visible)`, with
+`p` a softmax over all 101 dish prompts. FoodSeg103 has **no dish annotation**,
+so the target is the model's own top-1 on the *unmasked* photograph: the
+decomposition explains the model's prediction, which is not always the dish.
+That limitation is measured rather than hidden — see
+[W01-10](insights/week-01.md).
+
+The checkpoint is named in full in the config, as
+`<backend>/<architecture>/<pretrained>`, and loading it prints a provenance
+record including a sha256 over the weights:
+
+```bash
+uv run python -m food_shapley.scoring --config configs/week01-clip-blur.toml
+```
+
+Run this once on a networked machine before submitting anything: it warms the
+weight cache under `HF_HOME` (`slurm/prepare.sh` step 5) and it fails loudly if
+the architecture and the pretrained tag disagree. That guard is not theoretical
+— `ViT-B-32/openai`, which open_clip accepts with only a warning, runs OpenAI's
+QuickGELU weights through standard GELU and changed the predicted dish on 15 of
+40 test images.
+
+## The game
+
+`food_shapley.game.IngredientGame` is the `shapiq.Game` that joins the three
+pieces: one image's players, the blur removal operator, and the value
+function. One instance is one image and one target dish, and the model is
+loaded once per process rather than once per game.
+
+Under `background_mode = "player"` the grand coalition's rendering *is* the
+photograph, so `v(N)` reproduces the target's own log-probability bit for bit,
+and `v(∅)` is a fully blurred frame. The game is normalised, so `shapiq`
+reports `v(S) − v(∅)` and the empty coalition is worth exactly 0.
+
+Exact Shapley values over the full powerset of three real images satisfy
+`sum(SV) == v(N) − v(∅)` to within `4.5e-16`, against a `1e-9` gate. Two
+things are worth knowing before reading or extending the code:
+
+- The game has no opinion about coalition ordering. `shapiq` passes a boolean
+  `(n_coalitions, n_players)` matrix and gets one value per row, in row order.
+  A game that *consistently* mislabels its coalitions passes the efficiency
+  check perfectly, so that property is tested by decoding the coalition back
+  out of the rendering, not by checking numbers.
+- CLIP's float32 forward pass is not batch-invariant. Rebatching moves a
+  coalition value by up to ~8e-06 nats and a Shapley value by up to ~3e-06,
+  which is why `chunk_size` is a runtime argument rather than a config field,
+  and why an efficiency check must read `v(N)` and `v(∅)` from the same
+  evaluation. Measured in [W01-11](insights/week-01.md).
+
+## Exact indices
+
+`food_shapley.indices.compute_indices` turns one game into one decomposition:
+the full coalition vector, exact Shapley values, k-SII at
+`interaction_order`, the Möbius transform at full order, and the efficiency
+residual. All three index families come from a single `ExactComputer`
+evaluation, so the Möbius transform is free once the coalitions are scored.
+
+```bash
+uv run python -m food_shapley.indices --config configs/week01-clip-blur.toml \
+    --image 32 --save runs/one-image.npz
+```
+
+`save_indices` / `load_indices` round-trip it as one `.npz` per image — the
+artifact the full run will write, one per array task.
+
+**A stored block's shape depends on the configuration, never on the
+numbers.** `shapiq` omits k-SII entries whose value is exactly zero: on a
+4-player game with an inert player it returns 6 of the 11 subsets of size
+≤ 2, missing that player's own singleton, and its `interaction_lookup` is not
+in powerset order. Reading those rows directly would take a value-dependent
+sample of the interactions with no symptom, so every block is rebuilt against
+`powerset(range(n), max_size=order)` with omissions restored as `0.0`. An
+analysis may therefore index a stored file positionally. Measured in
+[W01-12](insights/week-01.md).
 
 ## Looking at what the model will see
 
@@ -198,6 +292,36 @@ libraries, checks the GPU, and re-hashes the dataset. See
 [`slurm/README.md`](slurm/README.md) for the cluster conventions these scripts
 assume, all of which are still unverified: **nothing here has been submitted
 to a cluster yet.**
+
+### The full run
+
+Same three subcommands, over the real split:
+
+```bash
+bash slurm/prepare.sh configs/week01-clip-blur.toml
+CONFIG=configs/week01-clip-blur.toml sbatch slurm/run_array.slurm
+
+uv run --frozen python -m food_shapley.run \
+    --config configs/week01-clip-blur.toml verify
+```
+
+The `verify` step is not optional. An array that silently drops 3 % of its
+tasks looks exactly like one that succeeded, so `verify` re-opens every
+expected file, checks it holds the image its name claims, re-checks the stored
+efficiency residual, writes `summary.json`, and exits non-zero on any problem.
+
+One `.npz` is written per **image**, not per task, so a partial failure is
+re-runnable at image granularity: resubmitting skips what is already on disk
+and recomputes only the rest. The array size in `#SBATCH --array` is therefore
+a throughput choice and changes no stored number — each image's seed and
+filename are derived from the image itself, never from the task. Writes are
+atomic, so a task killed by walltime leaves no truncated file for a resumed
+run to mistake for finished work.
+
+`max_images` in the config truncates the run to a prefix of the split for a
+rehearsal. It is a config field rather than a flag so that the rehearsal gets
+its own run directory; a prefix is not a sample, and is never a basis for a
+reported statistic.
 
 ## Reproducibility conventions
 

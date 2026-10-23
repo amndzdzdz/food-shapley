@@ -90,6 +90,37 @@ def test_unknown_split_is_rejected(
         check_environment(dataset_split="validation")
 
 
+def test_missing_prompt_set_is_only_a_note_by_default(
+    empty_data_root: Path,  # noqa: ARG001
+) -> None:
+    result = check_environment()
+    assert result.ok
+    assert any("food101" in fact for fact in result.facts)
+
+
+def test_missing_prompt_set_fails_when_required(
+    empty_data_root: Path,  # noqa: ARG001
+) -> None:
+    """The 101 prompts are the model's output space.
+
+    Without them a job has no value function to compute, so a compute node must
+    stop here rather than discover it per image.
+    """
+    result = check_environment(require_prompts=True)
+    assert not result.ok
+    assert any("food101" in problem for problem in result.problems)
+
+
+def test_prompt_set_is_reported_even_when_not_required() -> None:
+    """Reported unconditionally, required or not.
+
+    A job log that omits which prompt set was on the node cannot be used to
+    explain the numbers it produced.
+    """
+    result = check_environment()
+    assert any("food101" in fact for fact in result.facts)
+
+
 def test_cli_passes_on_this_machine() -> None:
     assert main([]) == 0
 
@@ -98,3 +129,9 @@ def test_cli_reports_dataset_failure(
     empty_data_root: Path,  # noqa: ARG001
 ) -> None:
     assert main(["--dataset-split", "test", "--require-dataset"]) == 1
+
+
+def test_cli_reports_prompt_set_failure(
+    empty_data_root: Path,  # noqa: ARG001
+) -> None:
+    assert main(["--require-prompts"]) == 1

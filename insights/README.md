@@ -4,15 +4,16 @@ This directory is the project's lab notebook. It holds what was *actually
 observed*. Planned work lives in [`docs/`](../docs/); nothing here should be
 written before the evidence for it exists.
 
-**No experiment has been run and no model has been evaluated.** The entries so
-far concern the input data, the way it is turned into coalition players, and
-the way a coalition is rendered for the model.
+**No experiment in the `PLAN.md` sense has been run.** The entries cover the
+input data, the way it is turned into coalition players, the way a coalition
+is rendered, and the value function and exact indices measured on a
+three-image correctness sample — not a result.
 
 ## Index
 
 | File | Corresponding plan | Entries |
 |---|---|---|
-| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | W01-01 (FoodSeg103 source), W01-02 (background label; *partially contradicted*), W01-03 (ingredient names exist), W01-04 (≤ 10 ingredients/image), W01-05 (CLIP's centre crop drops 0.60 % of ingredient instances), W01-06 (player construction over the full split), W01-07 (visual check passes on 19 coalitions), W01-08 (some ingredient *names* are wrong where the mask is right) |
+| [week-01.md](week-01.md) | [docs/week-01.md](../docs/week-01.md) | W01-01 (FoodSeg103 source), W01-02 (background label; *partially contradicted*), W01-03 (ingredient names exist), W01-04 (≤ 10 ingredients/image), W01-05 (CLIP's centre crop drops 0.60 % of ingredient instances), W01-06 (player construction over the full split), W01-07 (visual check passes on 19 coalitions), W01-08 (some ingredient *names* are wrong where the mask is right), W01-09 (the scene is a player; *partially supersedes W01-06*), W01-10 (value function sound, dish vocabulary borrowed), W01-11 (efficiency on three real games; rebatching drift ~8e-06 nats), W01-12 (`shapiq` drops zero-valued k-SII entries; *corrects a generalisation in W01-11*) |
 | [week-02.md](week-02.md) | [docs/week-02.md](../docs/week-02.md) | none yet |
 | [week-03.md](week-03.md) | [docs/week-03.md](../docs/week-03.md) | none yet |
 | [week-04.md](week-04.md) | [docs/week-04.md](../docs/week-04.md) | none yet |

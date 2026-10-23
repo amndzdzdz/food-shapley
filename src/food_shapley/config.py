@@ -50,8 +50,18 @@ class ExperimentConfig:
         seed: Base random seed; per-unit seeds are derived from it.
         dataset: Dataset identifier, e.g. ``"foodseg103"``.
         split: Dataset split, e.g. ``"test"``.
-        model: Model identifier of the scored model, e.g. an open_clip checkpoint.
+        model: Identifier of the scored model, as
+            ``"<backend>/<architecture>/<pretrained>"`` -- e.g.
+            ``"open_clip/ViT-B-32/openai"``. The pretrained tag is **not**
+            optional: open_clip serves ``ViT-B-32`` weights trained on OpenAI's
+            corpus, LAION-400M, LAION-2B and DataComp, and they are different
+            models that give different numbers. See
+            :class:`~food_shapley.scoring.CheckpointSpec`.
         removal: Segment-removal operator, e.g. ``"blur"`` or ``"token-drop"``.
+        prompt_template: Format string with one ``{}`` placeholder, applied to
+            every dish name to build the text CLIP scores against. Part of the
+            claim: the prompt set is the model's output space, so rewording the
+            template changes every value in the run.
         blur_radius: Gaussian blur radius in pixels for the ``"blur"`` operator.
             Part of the claim, not a cosmetic setting: a Shapley value is always
             "the contribution under *this* removal operator", and the radius is
@@ -70,6 +80,21 @@ class ExperimentConfig:
         min_area_fraction: Ingredients covering less than this share of the
             model's input are merged into the "rest" player. ``0.0`` keeps every
             segment, however small.
+        max_images: How many images of the split the run covers, counted from
+            the start, or ``0`` for all of them. A semantic field, not a
+            throughput knob: a run over 20 images and a run over 2,135 answer
+            different questions, so they must not share a run directory. It
+            takes a **prefix**, not a random sample, which makes it a
+            rehearsal device for checking the array mechanics cheaply and
+            **not** a basis for any reported statistic.
+        interaction_order: The ``k`` of the k-SII interaction index -- the
+            largest group of players whose joint effect is reported. ``1``
+            reduces k-SII to the Shapley value, ``2`` reports pairs. It is the
+            headline choice of Milestone 2's compositionality index
+            (``PLAN.md`` step 13), so it belongs in the fingerprint: two runs
+            differing in it answer different questions. The Möbius transform is
+            computed at full order regardless, so lowering this does not lose
+            the raw interaction structure.
         notes: Free-text provenance note; excluded from the fingerprint.
     """
 
@@ -79,11 +104,14 @@ class ExperimentConfig:
     split: str
     model: str
     removal: str
+    prompt_template: str
     image_size: int
     max_players: int
     min_area_fraction: float
     blur_radius: float
     background_mode: str
+    interaction_order: int
+    max_images: int
     notes: str = ""
 
     def __post_init__(self) -> None:
@@ -101,6 +129,15 @@ class ExperimentConfig:
         if self.image_size < 1:
             msg = f"config field 'image_size' must be >= 1, got {self.image_size}"
             raise ValueError(msg)
+        if "{}" not in self.prompt_template:
+            # Without the placeholder every dish gets the same prompt, the
+            # softmax is uniform, and every Shapley value is zero -- a silent
+            # way to produce a run that passes every check and means nothing.
+            msg = (
+                "config field 'prompt_template' must contain a '{}' placeholder, "
+                f"got {self.prompt_template!r}"
+            )
+            raise ValueError(msg)
         if self.max_players < 1:
             msg = f"config field 'max_players' must be >= 1, got {self.max_players}"
             raise ValueError(msg)
@@ -113,6 +150,21 @@ class ExperimentConfig:
             # so every Shapley value would be zero and efficiency would still
             # hold -- a silent way to produce a meaningless run.
             msg = f"config field 'blur_radius' must be positive, got {self.blur_radius}"
+            raise ValueError(msg)
+        if self.max_images < 0:
+            msg = f"config field 'max_images' must be >= 0 (0 means all), got {self.max_images}"
+            raise ValueError(msg)
+        if self.interaction_order < 1:
+            msg = f"config field 'interaction_order' must be >= 1, got {self.interaction_order}"
+            raise ValueError(msg)
+        if self.interaction_order > self.max_players:
+            # Unreachable by construction: no image can have more players than
+            # the cap, so the order would be clamped on every single image and
+            # the configured value would describe nothing that was computed.
+            msg = (
+                f"config field 'interaction_order' is {self.interaction_order} but "
+                f"'max_players' is {self.max_players}, so no image can ever reach it"
+            )
             raise ValueError(msg)
         if self.background_mode not in BACKGROUND_MODES:
             allowed = ", ".join(sorted(BACKGROUND_MODES))

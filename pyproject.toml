@@ -164,3 +164,10 @@ implicit_reexport = true
 [[tool.mypy.overrides]]
 module = ["torchvision.*"]
 ignore_missing_imports = true
+
+# open_clip ships no py.typed marker. Only food_shapley.scoring imports it, and
+# only for create_model_and_transforms / get_tokenizer; everything the rest of
+# the codebase sees is typed by ClipScorer's own signatures.
+[[tool.mypy.overrides]]
+module = ["open_clip.*"]
+ignore_missing_imports = true

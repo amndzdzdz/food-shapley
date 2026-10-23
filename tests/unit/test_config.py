@@ -11,13 +11,16 @@ name = "smoke"
 seed = 0
 dataset = "foodseg103"
 split = "test"
-model = "openclip/ViT-B-32"
+model = "open_clip/ViT-B-32-quickgelu/openai"
 removal = "blur"
+prompt_template = "a photo of {}, a type of food."
 image_size = 224
 max_players = 7
 min_area_fraction = 0.005
 blur_radius = 12.0
 background_mode = "player"
+interaction_order = 2
+max_images = 0
 """
 
 
@@ -55,6 +58,18 @@ def test_load_config_reports_missing_keys(tmp_path: Path) -> None:
         ("background_mode", "blurred"),
         ("background_mode", ""),
         ("background_mode", "Player"),
+        # A template without the placeholder gives every dish the same prompt,
+        # which makes the softmax uniform and every Shapley value zero.
+        ("prompt_template", "a photo of food."),
+        ("prompt_template", ""),
+        ("prompt_template", "a photo of {dish}."),
+        ("interaction_order", 0),
+        ("interaction_order", -1),
+        # Larger than `max_players` (7 in the fixture): no image could ever
+        # reach it, so every image would clamp and the configured value would
+        # describe nothing that was actually computed.
+        ("interaction_order", 8),
+        ("max_images", -1),
     ],
 )
 def test_invalid_fields_are_rejected(config: ExperimentConfig, field: str, value: object) -> None:

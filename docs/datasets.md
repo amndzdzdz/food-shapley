@@ -1,9 +1,10 @@
 # Datasets: provenance, licensing, preprocessing
 
-FoodSeg103 has been downloaded and verified (2026-10-17); the remaining
-sections are still unverified and are marked as such. Fill in each unverified
-row before that dataset is first used, and record the verification date.
-Dataset files live under `data/` and are never committed.
+FoodSeg103 has been downloaded and verified (2026-10-17) and the Food-101 class
+names have been downloaded and verified (2026-10-19); the remaining sections
+are still unverified and are marked as such. Fill in each unverified row before
+that dataset is first used, and record the verification date. Dataset files
+live under `data/` and are never committed.
 
 ## FoodSeg103
 
@@ -87,13 +88,73 @@ Still to confirm in Week 1:
 
 ## Food-101 class names
 
+**Verified 2026-10-19** by `python -m food_shapley.prompts`.
+
 | Field | Value |
 |---|---|
-| Role | Candidate dish prompt set for the CLIP value function |
+| Role | Dish prompt set for the CLIP value function: it *is* the softmax denominator |
 | Introduced in `PLAN.md` | Milestone 1, step 2 ("e.g. Food-101's 101 class names") |
-| Source URL | *unverified* |
-| License | *unverified* |
-| Notes | Only the class-name list is needed, not the images. The exact prompt template is a configuration value and must be recorded with every run. |
+| Source used | Hugging Face [`ethz/food101`](https://huggingface.co/datasets/ethz/food101) **builder metadata only** |
+| Revision pinned | `83488de741c1bd1ce27aa6a2b33e19c7bdf92ca9` (lastModified 2026-03-09) |
+| What is fetched | `load_dataset_builder(...).info.features["label"].names` — the `ClassLabel` name list. **No images**: builder metadata only, none of Food-101's 101,000 images are downloaded |
+| Authoritative source | ETHZ, [Food-101 project page](https://data.vision.ee.ethz.ch/cvl/datasets_extra/food-101/) (Bossard, Guillaumin & Van Gool, ECCV 2014) |
+| License | **No license is declared on the Hub repository.** The original release states the images were scraped from Foodspotting and are provided for *non-commercial research use only*; the authors do not own them. Recorded in the manifest as `"unknown (images: ETHZ/Foodspotting, scientific fair use; names only are used)"` |
+| License risk for this project | Low but non-zero: only the 101 **strings** are used, never an image. A list of English dish names is not plausibly the protected element of that dataset, but the paper should cite Food-101 as the source of the label vocabulary rather than imply the dataset was used |
+| Classes observed | exactly **101**, all unique, all non-empty |
+| Name format | lowercase with underscores (`apple_pie`, `beef_carpaccio`, `huevos_rancheros`). `prompts.dish_display_name` converts underscores to spaces before templating |
+| On-disk size | ~12 kB (`dish_names.json` 1,692 B + `manifest.json` 426 B) |
+| Local path | `data/raw/food101/` (override via `FOOD_SHAPLEY_DATA`) |
+| Integrity record | `data/raw/food101/manifest.json`; `names_sha256 = 92d5cd07a7856279655bc77e852337ad501f98c8a0e8cee7c969c304a6b19255`, `datasets` 5.1.0 |
+
+### What the hash does and does not pin
+
+`names_sha256` is computed over **this project's own serialisation** of the
+name list (`json.dumps(list(names), indent=2)` plus a trailing newline), not
+over an upstream file — the names come out of builder metadata, not out of a
+downloadable artifact with a stable byte layout. So the hash detects a local
+copy that was edited or truncated, and it
+detects an upstream reordering or renaming if the pinned revision is ever
+moved. It is **not** a hash anyone else can independently reproduce from the
+Hub without running this code. The revision pin is what makes the source
+reproducible; the hash is what makes the local copy checkable.
+
+The order matters and is preserved: the prompt set is the softmax denominator
+and `DishTarget.index` is an index into it, so a reordered list would silently
+relabel every stored target. `verify_dish_names` therefore hashes the ordered
+list, not a set.
+
+### Prompt template
+
+The template is a required `ExperimentConfig` field (`prompt_template`), so it
+enters the run fingerprint and cannot drift between runs. Week 1 uses:
+
+```toml
+prompt_template = "a photo of {}, a type of food."
+```
+
+This is the Food-101 template from the CLIP paper's prompt-engineering
+appendix, used rather than invented because a hand-tuned template would be an
+unreported degree of freedom in every number the project reports. It was not
+tuned here and no alternative template has been measured — changing it changes
+every value in the game and produces a new fingerprint, by design.
+
+### Why a borrowed vocabulary, and what it costs
+
+FoodSeg103 annotates **ingredients, not dishes**: there is no dish label in the
+data at all (see `docs/week-01.md`, task 1.3). The target dish is therefore the
+model's own top-1 over this prompt set on the unmasked photograph. Two
+consequences, both measured in insight W01-10:
+
+- Food-101's 101 dishes are **not** a cover of what FoodSeg103 photographs.
+  Over 200 test images the model used 66 of the 101 classes, and `pork_chop`
+  alone absorbed 13 % of images, firing on plates of chicken and rice.
+- Top-1 confidence does **not** separate the apt targets from the inapt ones
+  (minimum 0.167 over 200 images; a frame containing cake was called
+  `baby_back_ribs` at 0.79), so no confidence threshold is applied anywhere.
+
+A dish-labelled food dataset would remove this caveat and is the obvious
+Milestone-2 improvement; `PLAN.md` step 2 explicitly names Food-101 as the
+default, so Week 1 follows it and records the cost.
 
 ## Recipe1M *(optional, Week 2 stretch goal)*
 

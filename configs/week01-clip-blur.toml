@@ -7,13 +7,31 @@ seed = 0
 dataset = "foodseg103"
 split = "test"
 
-# Pinned by name; the checkpoint hash is recorded in the run metadata when the
-# model is first loaded (PLAN.md step 2).
-model = "openclip/ViT-B-32"
+# "<backend>/<architecture>/<pretrained>". The pretrained tag is not optional:
+# open_clip serves ViT-B-32 weights trained on OpenAI's corpus, LAION-400M,
+# LAION-2B and DataComp, and they are different models that give different
+# numbers. `openai` is the checkpoint the CLIP paper reports Food-101 zero-shot
+# accuracy for, which is the only published number this run can be compared
+# against. A hash of the loaded weights is recorded in the run metadata.
+#
+# "-quickgelu", not plain "ViT-B-32": OpenAI trained these weights with the
+# QuickGELU activation, and since open_clip 2.24 the plain `ViT-B-32` config
+# uses standard GELU. Loading `openai` weights into it runs the right numbers
+# through the wrong non-linearity -- open_clip warns, and measured on 40 test
+# images the two disagree on the top-1 dish for 15 of them. Since the top-1
+# *is* the target, that would have silently changed what 37 % of images
+# decompose. See W01-10.
+model = "open_clip/ViT-B-32-quickgelu/openai"
 
 # Blur is the Week-1 operator. Week 2 adds token dropping as the robustness
 # check against "blur does not actually remove information".
 removal = "blur"
+
+# The CLIP paper's own Food-101 template, used verbatim so that the prompt set
+# is not a free parameter tuned by us. It is part of the claim, not a detail:
+# the 101 prompts are the softmax denominator, so rewording this changes every
+# value in the run. See prompts.py and W01-10.
+prompt_template = "a photo of {}, a type of food."
 
 # ViT-B-32's input: 224 px, 32 px patches, so 7x7 = 49 patches.
 image_size = 224
@@ -50,5 +68,21 @@ blur_radius = 12.0
 # It is NOT an ingredient: `PlayerSet.ingredient_indices` excludes it, and
 # every ingredient-level statistic must be computed over those indices.
 background_mode = "player"
+
+# The k of k-SII: pairs. 2 is the order `PLAN.md` step 7 asks figures for
+# ("interaction heatmaps", which are pairwise) and the order the
+# telltale-vs-combination question is posed at. It is not a cost constraint --
+# the game is evaluated exactly once and every index is derived from the same
+# 2^n values, so order 3 would cost no extra forward passes. It is a reporting
+# choice, and it is in the fingerprint because two runs differing in it answer
+# different questions. The Möbius transform is stored at full order either
+# way, so raising this later needs no re-run of the model.
+interaction_order = 2
+
+# The whole test split: 2,135 images, 91,828 coalitions (W01-11). This is the
+# Week-1 run `PLAN.md` step 5 asks for, so it takes everything. A prefix would
+# be a rehearsal, and rehearsals belong in smoke.toml, where the fingerprint
+# keeps their output in a different run directory.
+max_images = 0
 
 notes = "Week 1 baseline. No run has been executed with this configuration yet."

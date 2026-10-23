@@ -32,19 +32,89 @@ results on the basis of its infrastructure.
 
 ## Current state
 
-Infrastructure, data acquisition, and the segment→player mapping.
-`src/food_shapley/` contains configuration, seeding, artifact layout, run
-provenance, a SLURM self-test (`selftest.py`, array mechanics without a dataset
-or a model), the FoodSeg103 downloader (`download.py`), the node environment
+Infrastructure, data acquisition, the segment→player mapping, the CLIP value
+function, the coalition game and the exact indices. `src/food_shapley/`
+contains configuration,
+seeding, artifact layout, run provenance, a SLURM self-test (`selftest.py`,
+array mechanics without a dataset or a model), the FoodSeg103 downloader
+(`download.py`), the dish prompt set (`prompts.py`), the node environment
 check (`envcheck.py`), split loading (`dataset.py`), player construction under
-CLIP's geometry (`segments.py`), the blur removal operator (`masking.py`) and
-the coalition contact-sheet renderer (`preview.py`). The FoodSeg103 test split
-has been downloaded and verified.
+CLIP's geometry (`segments.py`), the blur removal operator (`masking.py`), the
+coalition contact-sheet renderer (`preview.py`), CLIP loading and zero-shot
+scoring (`scoring.py`), the value function (`value.py`), the `shapiq.Game`
+subclass (`game.py`), the exact SV / k-SII / Möbius decomposition
+(`indices.py`) and the full-split job array (`run.py`). The FoodSeg103 test
+split and the Food-101 prompt set have both been downloaded and verified.
 
-**No model has been loaded, no experiment has been run, no result exists.**
-Week 1 task 1.2 is done; 1.1 is still open on its cluster-submission step. The
-value function and the `shapiq` game (`PLAN.md` steps 2–4) have not been
-started, and nothing has ever been submitted to a SLURM cluster.
+**No experiment has been run and no result exists.** Week 1 tasks 1.2, 1.3,
+1.4 and 1.5 are done; 1.1 is still open on its cluster-submission step, and
+nothing has ever been submitted to a SLURM cluster. Exact Shapley values,
+k-SII and Möbius coefficients have now been computed — on **three** images, as
+a correctness check, not as a result (W01-11, W01-12). Task 1.6's machinery
+(`run.py`, `slurm/run_array.slurm`) is written and rehearsed locally on three
+real images, but **the full run has not been executed** and is blocked behind
+1.1. No `.npz` exists outside a temporary test directory.
+
+`game.py` deliberately has no opinion about coalition ordering: `shapiq` passes
+a boolean `(n_coalitions, n_players)` matrix and gets one value per row, in row
+order. Do not add sorting, grouping, deduplication or caching by coalition — a
+game that consistently mislabels its coalitions satisfies the efficiency check
+perfectly, so no downstream number can catch it. `chunk_size` is a runtime
+argument and **not** an `ExperimentConfig` field: it is a throughput knob, and
+putting it in the run fingerprint would make two runs of the same experiment
+look different. It is not quite inert — CLIP's float32 forward pass shifts a
+coalition value by up to ~8e-06 nats under rebatching (W01-11) — so any
+efficiency check must read `v(N)` and `v(∅)` from the same evaluation.
+
+`indices.py` rebuilds every index block to a shape fixed by `n_players` and
+`interaction_order`, with a boolean membership matrix saying which players
+each row belongs to. Do not store what `shapiq` returned: its
+`interaction_lookup` is not in powerset order, and it **omits k-SII entries
+whose value is exactly zero** — 6 of 11 rows on a 4-player test game,
+including a player's own singleton (W01-12). A downstream statistic reading
+those rows directly would take a value-dependent sample with no symptom.
+`interaction_order` *is* an `ExperimentConfig` field, unlike `chunk_size`,
+because it changes which numbers exist.
+
+`run.py` is the full-split array and is almost entirely bookkeeping; the
+research computation is one `compute_indices` call per image. Four invariants
+hold it together, and each exists because its absence fails silently. **One
+output file per image, never one per task** — so a partial failure is
+re-runnable per image. **A stored file does not depend on how the work was
+divided** — the image set comes from the config alone and each image's seed is
+derived from its own label, which is what makes a resubmission at a different
+`--array` a resumption and not a second experiment; do not derive anything
+from the task id. **Writes go through `_atomic_save`** — a truncated `.npz`
+left by a killed task would be skipped by the resumed run as "already done".
+**`verify` exits non-zero on any problem at all**; the "≥ 99 % coverage"
+criterion in `docs/week-01.md` is the bar for *reporting* a run, not for this
+command passing. Shards are strided, not contiguous, because per-image cost
+spans three orders of magnitude.
+
+`max_images` and `interaction_order` are both `ExperimentConfig` fields; both
+changed the fingerprints, which are now `deb3a76af736` for
+`configs/week01-clip-blur.toml` and `4f6b612d9de8` for `configs/smoke.toml`.
+`max_images` takes a **prefix, not a sample**, so a truncated run is a
+rehearsal device and never a basis for a reported statistic — it is a config
+field rather than a flag precisely so that a 20-image rehearsal cannot share a
+directory with the real run.
+
+The value function is `v(S) = log p(target dish | coalition S visible)` over
+all 101 dish prompts. **FoodSeg103 has no dish annotation**, so the target is
+the model's own top-1 on the unmasked photograph. Every result therefore
+explains *the model's prediction*, not the dish — say so rather than eliding
+it, and never write a per-ingredient claim as though it explained a dish. The
+costs of the borrowed vocabulary (66 of 101 classes used, `pork_chop` on 13 %
+of images including non-pork dishes, and confidence that does *not* flag the
+misses) are measured in `insights/week-01.md` W01-10.
+
+Checkpoints are named in full — `<backend>/<architecture>/<pretrained>` — and
+`ClipScorer.load` turns any open_clip architecture/weight mismatch warning into
+a `RuntimeError`. Do not weaken that guard: `ViT-B-32/openai` loads with only a
+warning and changes the predicted dish on 37 % of images (W01-10), which the
+efficiency check cannot detect. When adding a checkpoint for Milestone 2, load
+it once via `python -m food_shapley.scoring --config <cfg>` and record the
+printed `parameter_sha256`.
 
 The non-ingredient region is a **player** (`background_mode = "player"`), a
 deliberate, recorded deviation from `PLAN.md`'s "label 0 is background, not a

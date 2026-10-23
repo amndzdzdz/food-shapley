@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from food_shapley.download import split_dir, verify_split
+from food_shapley.prompts import prompt_set_dir, verify_dish_names
 
 __all__ = ["CheckResult", "check_environment", "main"]
 
@@ -123,11 +124,29 @@ def _check_dataset(result: CheckResult, split: str, *, require: bool) -> None:
     result.facts.append(f"foodseg103 '{split}' verified at {directory}")
 
 
+def _check_prompts(result: CheckResult, *, require: bool) -> None:
+    """Check that the dish prompt set is present and intact.
+
+    Checked on the node for the same reason the split is: the prompt set *is*
+    the model's output space, so a job that cannot read it cannot compute a
+    value function, and one that reads a changed copy would produce numbers
+    that silently do not belong to the run's fingerprint.
+    """
+    problems = verify_dish_names()
+    if problems:
+        target = result.problems if require else result.facts
+        prefix = "" if require else "note: "
+        target.extend(f"{prefix}{problem}" for problem in problems)
+        return
+    result.facts.append(f"food101 prompt set verified at {prompt_set_dir()}")
+
+
 def check_environment(
     *,
     require_gpu: bool = False,
     dataset_split: str | None = None,
     require_dataset: bool = False,
+    require_prompts: bool = False,
 ) -> CheckResult:
     """Inspect the current environment.
 
@@ -135,6 +154,9 @@ def check_environment(
         require_gpu: Treat a missing CUDA device as a failure.
         dataset_split: Split to check for, or ``None`` to skip the check.
         require_dataset: Treat a missing or corrupt split as a failure.
+        require_prompts: Treat a missing or corrupt dish prompt set as a
+            failure. The prompt set is always *reported*; this decides whether
+            a problem with it stops the job.
 
     Returns:
         The facts observed and the problems found.
@@ -148,6 +170,7 @@ def check_environment(
     _check_gpu(result, require=require_gpu)
     if dataset_split is not None:
         _check_dataset(result, dataset_split, require=require_dataset)
+    _check_prompts(result, require=require_prompts)
     return result
 
 
@@ -172,6 +195,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail if --dataset-split is missing or corrupt.",
     )
+    parser.add_argument(
+        "--require-prompts",
+        action="store_true",
+        help="Fail if the Food-101 dish prompt set is missing or corrupt.",
+    )
     return parser
 
 
@@ -189,6 +217,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_gpu=args.require_gpu,
         dataset_split=args.dataset_split,
         require_dataset=args.require_dataset,
+        require_prompts=args.require_prompts,
     )
 
     for fact in result.facts:

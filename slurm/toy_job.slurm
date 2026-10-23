@@ -68,12 +68,14 @@ echo "=== uv ==="
 # already synced the environment from the login node.
 uv --version
 
-echo "=== research stack, GPU and dataset ==="
+echo "=== research stack, GPU, dataset and prompt set ==="
 # --require-gpu: a GPU-partition job that quietly fell back to CPU would still
 # "succeed" and would then take days instead of hours. Fail here instead.
 # --require-dataset: catches a data root that is simply not mounted on the node.
+# --require-prompts: the 101 dish prompts are the model's output space, so a
+# node that cannot read them cannot compute a value function at all.
 uv run --frozen --no-sync python -m food_shapley.envcheck \
-    --require-gpu --dataset-split test --require-dataset
+    --require-gpu --dataset-split test --require-dataset --require-prompts
 
 echo "=== infrastructure self-test (single task) ==="
 uv run --frozen --no-sync python -m food_shapley.selftest --config "$CONFIG" task --task-id 0

@@ -101,20 +101,44 @@ class BlurRemoval:
             msg = f"blur radius must be positive, got {self.radius}"
             raise ValueError(msg)
 
-    def render(self, players: PlayerSet, coalition: Iterable[int]) -> NDArray[np.uint8]:
+    def render(
+        self,
+        players: PlayerSet,
+        coalition: Iterable[int],
+        *,
+        blurred: NDArray[np.uint8] | None = None,
+    ) -> NDArray[np.uint8]:
         """Render the image as the model should see it for one coalition.
 
         Args:
             players: The player set, which carries the aligned image.
             coalition: Player indices that stay visible.
+            blurred: The output of :meth:`blurred` for *this* player set, to
+                avoid re-blurring. A caller rendering the whole powerset would
+                otherwise recompute one identical Gaussian blur up to 2,048
+                times. Optional purely for speed: the rendering is
+                byte-identical either way, which is asserted in the tests.
 
         Returns:
             RGB array with the same shape as ``players.image``.
+
+        Raises:
+            ValueError: If ``blurred`` does not match the image's shape, which
+                would mean it came from a different image and would silently
+                composite one photograph's sharp pixels onto another's blur.
         """
         keep = players.coalition_mask(coalition)
         if self.keep_background:
             keep = keep | players.background
-        return np.where(keep[..., None], players.image, self.blurred(players))
+        if blurred is None:
+            blurred = self.blurred(players)
+        elif blurred.shape != players.image.shape:
+            msg = (
+                f"blurred frame has shape {blurred.shape}, expected "
+                f"{players.image.shape}; it belongs to a different image"
+            )
+            raise ValueError(msg)
+        return np.where(keep[..., None], players.image, blurred)
 
     def blurred(self, players: PlayerSet) -> NDArray[np.uint8]:
         """Return the fully blurred image, i.e. the operator's baseline.
