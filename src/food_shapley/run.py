@@ -244,6 +244,17 @@ class ImageDecomposer:
         """Number of images in the loaded split."""
         return len(self._split)
 
+    @property
+    def device(self) -> str:
+        """Torch device the checkpoint was actually loaded onto.
+
+        Reported into the task log because ``device=None`` falls back to CPU
+        when CUDA is unavailable, and a whole array silently running on CPU
+        looks exactly like one running on GPU right up until the walltime
+        expires with most of the split undone.
+        """
+        return self._value_fn.scorer.device
+
     def decompose(self, index: int) -> ImageIndices:
         """Build one image's game and compute its exact indices.
 
@@ -634,6 +645,7 @@ def _command_task(config: ExperimentConfig, args: argparse.Namespace) -> int:
     task_id = _from_env(args.task_id, "SLURM_ARRAY_TASK_ID")
     num_tasks = _from_env(args.num_tasks, "SLURM_ARRAY_TASK_COUNT")
     decomposer = ImageDecomposer(config, device=args.device, chunk_size=args.chunk_size)
+    print(f"device: {decomposer.device}, split: {decomposer.split_size} images", flush=True)
 
     def announce(index: int) -> None:
         print(f"  image {index}", flush=True)

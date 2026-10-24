@@ -371,9 +371,23 @@ the wrong-image guard removed, a non-atomic write, the partial file left
 behind, a failed task reporting success, the prepare check removed, and four
 ways for `verify` to pass a broken run — and **caught all 15**.
 
-Not done, and not claimable: the run. `slurm/run_array.slurm` has never been
-submitted, its four-hour walltime is a guess and has never been measured on
-this cluster, and no `.npz` exists outside a temporary test directory.
+Not done, and not claimable: the run. No `.npz` exists outside a temporary
+test directory, and the four-hour walltime is still a guess.
+
+**First submission, 2026-10-23 (W01-13).** Array 225119 was submitted with
+`--array=0-1` and both tasks failed — the login-node `prepare` had been run
+for `week01-clip-blur` and the array submitted with `CONFIG=smoke.toml`, so
+`run_task`'s "prepare must have run" guard fired exactly as designed. No
+image was decomposed. The failure is nonetheless informative, because it
+happens *after* `ImageDecomposer` is constructed: the partition, `PATH`, `uv
+run --frozen --no-sync`, the imports, the FoodSeg103 split and the CLIP
+checkpoint all worked on the node. Three script changes came out of it —
+`--array=0-27` (`MaxSubmit = 30` rejects 32 at submit time),
+`HF_HUB_OFFLINE=1` (the node has network access and the load contacted the
+Hub despite a warm cache), and a `device:` line printed at task start so that
+an array silently running on CPU is visible in the first second rather than
+at the walltime. Still unverified: that a GPU is allocated and used, and the
+per-image runtime `-t` must be set from.
 
 ## Experimental design and hypotheses
 

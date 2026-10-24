@@ -110,6 +110,11 @@ class FakeDecomposer:
         """Number of images in the stand-in split."""
         return self._split_size
 
+    @property
+    def device(self) -> str:
+        """Stand-in for the device the checkpoint would have loaded onto."""
+        return "cpu"
+
     def decompose(self, index: int) -> ImageIndices:
         """Return the template, relabelled as image ``index``.
 
@@ -129,7 +134,8 @@ def as_decomposer(stub: FakeDecomposer) -> ImageDecomposer:
     """Hand the stub to `run_task` under its real parameter type.
 
     `run_task` touches exactly two members -- ``split_size`` and
-    ``decompose`` -- so the stub is a faithful stand-in. Cast rather than
+    ``decompose`` -- and the CLI additionally reports ``device``, so the stub
+    is a faithful stand-in for all three. Cast rather than
     widening the production signature to a `Protocol`, for the reason given in
     ``synthetic_game.as_value_function``.
     """

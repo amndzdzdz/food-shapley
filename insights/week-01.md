@@ -3,7 +3,7 @@
 Plan: [docs/week-01.md](../docs/week-01.md) · Entry format:
 [insights/README.md](README.md)
 
-**Twelve entries. W01-01 to W01-09 are about the input data, how it becomes
+**Thirteen entries. W01-01 to W01-09 are about the input data, how it becomes
 coalition players, and how a coalition is rendered. W01-10 is the first entry
 in which a model was actually loaded and run: it records the value function's
 behaviour on 200 unmasked images, a checkpoint misconfiguration that would
@@ -14,10 +14,13 @@ to the last bit, and the one thing that is *not* exact — CLIP's float32
 forward pass under rebatching — is bounded there. W01-12 is about the first
 numbers the project intends to *store*: `shapiq` returns k-SII in a shape
 that depends on the values rather than on the game, so every index block is
-rebuilt to a fixed shape before it is written. No experiment in the `PLAN.md`
-sense has been run: three images are a correctness check, not a result.**
-W01-03 partially contradicts W01-02, W01-09 partially supersedes W01-06, and
-W01-12 corrects a generalisation in W01-11; read all three pairs.
+rebuilt to a fixed shape before it is written. W01-13 is the only entry about
+the cluster: the first submission failed, but it failed late enough to prove
+most of the environment. No experiment in the `PLAN.md` sense has been run:
+three images are a correctness check, not a result, and the cluster has not
+yet decomposed one.** W01-03 partially contradicts W01-02, W01-09 partially
+supersedes W01-06, and W01-12 corrects a generalisation in W01-11; read all
+three pairs.
 
 ## Questions this week's entries should answer
 
@@ -27,7 +30,14 @@ Derived from the Week 1 plan; each needs a dated entry once evidence exists.
   assumptions in `slurm/README.md` turned out to be wrong — partition,
   walltime, `uv run --no-sync` on an offline node, scratch paths? This is the
   first thing to record, because every later run inherits these settings.
-  **Still open: nothing has been submitted.**
+  **Partly answered by W01-13.** The toy jobs were never submitted; the *real*
+  array was, on 2026-10-23, and both its tasks failed on a config mismatch
+  before decomposing anything. Three documented assumptions were wrong —
+  a 32-task array is unsubmittable (`MaxSubmit = 30`), the node is *not*
+  offline and the model load contacted the Hub, and `TMPDIR` is forced by
+  `slurmstepd`. Partition, `uv run --no-sync`, the imports, the dataset and
+  the checkpoint all worked. **Still open: whether a GPU was used, and the
+  per-image runtime that `-t` should be set from.**
 - Does the efficiency check (`sum(SV) == v(N) − v(∅)`) hold, and at what
   numerical tolerance? **Answered by W01-11 and corrected by W01-12 for three
   real images: the residual is `0.0`, `−4.441e-16`, `0.0` as task 1.6 will
@@ -53,6 +63,214 @@ Derived from the Week 1 plan; each needs a dated entry once evidence exists.
 
 Record failures and surprises here as readily as successes — a failed masking
 check is one of the most valuable entries this week can contain.
+
+---
+
+## W01-13 — The first cluster submission: three of `slurm/README.md`'s assumptions were wrong, and the one that cost a job was mine
+
+- **Date:** 2026-10-23
+- **Status:** validated for the four observations below, each read from a
+  SLURM log or an `sacctmgr` table; **inconclusive** on everything the run was
+  supposed to measure — no image was decomposed, so there is still no
+  per-image runtime, no GPU confirmation and no walltime estimate
+- **Plan reference:** docs/week-01.md, task 1.1 (`PLAN.md` step 0, "verify
+  SLURM array submission with a trivial job"); the first open question at the
+  top of this file, which this entry partially answers
+- **Run / artifact:** cluster login node `datolith`, compute node
+  `adakit.cip.ifi.lmu.de` · account `stud_ifi`, user `dziri`, QOS `normal` ·
+  SLURM array job **225119**, `--array=0-1`, partition `NvidiaAll` ·
+  `CONFIG=configs/smoke.toml`, fingerprint `4f6b612d9de8` ·
+  `slurm/logs/output_logs/output_food_shapley_run_225119_{0,1}.log` and the
+  matching `error_logs` · commit `b0945bc` plus the uncommitted task-1.3–1.6
+  working tree, copied to the cluster by hand
+- **Not a research result.** Nothing here is about food, CLIP or Shapley
+  values. It is recorded because the first open question above asks for it
+  explicitly — "every later run inherits these settings" — and because two of
+  the four findings changed a committed file.
+
+### Observation
+
+Both array tasks started, ran, and exited non-zero in under a minute.
+
+#### 1. Array tasks count individually against `MaxSubmit`, so `--array=0-31` never reaches a node
+
+The first submission attempt was rejected outright:
+
+```
+sbatch: error: AssocMaxSubmitJobLimit
+```
+
+Measured afterwards with
+`sacctmgr show assoc user=$USER format=maxjobs,maxsubmit,grpjobs,grpsubmit -p`:
+
+| Limit | Value |
+|---|---|
+| `MaxJobs` (running at once) | **15** |
+| `MaxSubmit` (submitted at all) | **30** |
+| `MaxWall` | none set |
+
+The QOS table carries no per-user limits, so the association limits are the
+binding ones. A 32-task array is 32 submitted jobs, not one. A `%` throttle
+does **not** help: `--array=0-31%8` caps concurrency, not the submitted count,
+and is rejected identically.
+
+`slurm/run_array.slurm` now ships `--array=0-27`, leaving two slots free for
+an interactive or smoke job.
+
+#### 2. The compute node has network access, and the model load used it
+
+`stderr` carried the Hub's unauthenticated-requests warning during
+`ImageDecomposer` construction — *after* `prepare.sh` had already cached the
+same weights under `$FOOD_SHAPLEY_DATA/hf-cache`. So:
+
+- `slurm/README.md`'s "compute nodes may be offline" is **false on adakit**;
+  the design was conservative in the right direction but for the wrong reason.
+- A cached checkpoint did not prevent a Hub round-trip. At 28 tasks starting
+  together this makes the run depend on Hub availability and rate limits at
+  exactly its most parallel moment, and a silent re-download would make two
+  tasks' weights un-attributable to one hash.
+
+`slurm/run_array.slurm` now sets `HF_HUB_OFFLINE=1`, converting a cache miss
+into an immediate loud failure. That is the better trade in one direction
+only: a cache miss is fixable on the login node, a rate limit is not.
+
+#### 3. `slurmstepd` cannot create `/tmp/user/<uid>` and falls back to `TMPDIR=/tmp`
+
+An error line to that effect appears before any of our output, so our
+`export TMPDIR="${TMPDIR:-...}"` never fires — the variable is already set.
+Harmless here, and worth writing down only to stop a future reader treating
+it as the cause of something else: `_atomic_save` writes its temporary file
+into the *output* directory, not `TMPDIR`, precisely so that the rename is on
+one filesystem.
+
+#### 4. The failure that actually killed both tasks was a config mismatch, and the guard caught it correctly
+
+```
+FileNotFoundError: no run metadata at
+  .../runs/smoke-4f6b612d9de8/run_metadata.json; run the 'prepare' subcommand
+  on the login node before submitting the array
+```
+
+`prepare.sh` had been run with `configs/week01-clip-blur.toml` and the array
+submitted with `CONFIG=configs/smoke.toml`. `prepare.sh` prepares the run
+directory for *the config it is given*, so `runs/` contained only
+`week01-clip-blur-deb3a76af736`. The two commands named different experiments.
+
+This is the "tasks must not create the run directory" guard (`run.py:456`)
+doing its job: two tasks starting together would otherwise have raced to
+write two provenance records. The mistake was in the instructions, not in the
+code.
+
+### Context and motivation
+
+Task 1.1's cluster step had been deferred since the start of the week, so
+`slurm/README.md` described a cluster nobody had submitted to. Its settings
+were copied from a script known to work for a different project, which is
+evidence but not verification. The run array for task 1.6 inherits every one
+of those settings.
+
+### Setup
+
+`bash slurm/prepare.sh configs/week01-clip-blur.toml` on the login node, then
+`CONFIG=configs/smoke.toml sbatch --array=0-1 slurm/run_array.slurm`.
+Diagnosis from the two stdout logs, the two stderr logs, and `ls runs/`.
+`sacct -X --starttime today` returned an empty table and was briefly
+misleading: the check was run at 00:04, so the jobs had finished "yesterday".
+
+### Evidence
+
+The strongest line in the whole run is the least dramatic one:
+
+```
+array 225119 task 0/2 on adakit.cip.ifi.lmu.de
+```
+
+and then a traceback whose innermost frame is `run_task`, reached from
+`_command_task` at `run.py:641` — **after** the `ImageDecomposer(...)`
+construction on the line above it. Construction loads the FoodSeg103 split
+and the CLIP checkpoint. So the traceback is positive evidence for everything
+that had to happen first:
+
+| Assumption | Status after 225119 |
+|---|---|
+| `uv` reachable without `~/.bashrc` (`PATH` export) | **confirmed** |
+| `uv run --frozen --no-sync` resolves on a node | **confirmed** |
+| `shapiq`, `torch`, `open_clip`, `datasets` import there | **confirmed** |
+| FoodSeg103 split loads from `$FOOD_SHAPLEY_DATA` | **confirmed** |
+| CLIP checkpoint loads on the node | **confirmed** |
+| `-p NvidiaAll` with no `--gres` is accepted | **confirmed** |
+| `$SLURM_ARRAY_TASK_ID` / `_COUNT` reach `run.py` | **confirmed** (`0/2`) |
+| Log directories exist at submit time | **confirmed** |
+| Compute nodes may be offline | **false** (§2) |
+| Node-local `TMPDIR` is ours to set | **false** (§3) |
+| 32-task array is submittable | **false** (§1) |
+| A GPU was allocated and used | **unknown** — nothing printed it |
+| Per-image runtime; `-t 04:00:00` is right | **unknown** |
+
+### Interpretation
+
+The submission failed and the day's unknowns mostly closed anyway. A
+`FileNotFoundError` thrown by our own guard, at a known line, after the
+expensive imports, is close to the most informative failure available: it
+proves the whole environment stack without spending GPU time.
+
+The one finding with teeth is §2. Everything else is a number to edit. A
+28-way parallel Hub dependency is a reproducibility hazard rather than a
+throughput one — the run would still finish, but the provenance record would
+claim a hash for weights that were fetched, not read, and nothing downstream
+could tell.
+
+§4 is a procedural finding about me, not about the cluster: the two-command
+recipe in `slurm/run_array.slurm`'s header names one config twice for exactly
+this reason, and the instruction I gave did not.
+
+### Limitations and alternative explanations
+
+- **One node, one submission.** `adakit` is one machine in `NvidiaAll`.
+  Another node in the same partition may well have no network access, in which
+  case `HF_HUB_OFFLINE=1` is load-bearing rather than merely prudent — and
+  would have failed there without §2 ever being observed.
+- **The limits in §1 are an association snapshot.** They are not a cluster
+  policy document and can be changed by an administrator without notice.
+- **§2 identifies that the Hub was contacted, not what for.** The warning is
+  consistent with a metadata revision check that would have succeeded offline
+  from cache. I did not establish whether any weight bytes crossed the wire;
+  `HF_HUB_OFFLINE=1` makes the question moot rather than answering it.
+- **Nothing was computed.** No `.npz`, no timing, no GPU confirmation. Every
+  "unknown" row above stays unknown.
+
+### Implications
+
+- `slurm/run_array.slurm`: `--array=0-27`, `HF_HUB_OFFLINE=1`, and a
+  `device:` line printed at task start — a whole array silently on CPU looks
+  exactly like one on GPU until the walltime expires with the split undone.
+- `slurm/README.md` records `MaxSubmit`/`MaxJobs` as *measured*, and no longer
+  suggests sizing an array to the split.
+- `-t 04:00:00` remains an unmeasured guess. It must be corrected from a run
+  that actually decomposes images, and the script's "never been measured on
+  this cluster" sentence deleted only when that happens.
+- `FOOD_SHAPLEY_RUNS` was `/home/d/dziri/food-shapley/runs` — quota-limited
+  NFS. It must point at scratch before the real run, which is what
+  `slurm/README.md`'s *Disk* table already says.
+
+### Follow-up questions and next steps
+
+1. Re-run the rehearsal with **the same config on both commands**, confirm
+   `device: cuda`, and read the real per-task walltime from
+   `seff <jobid>` / `sacct --starttime yesterday`.
+2. Does another `NvidiaAll` node have network access, or only `adakit`? If
+   not, §2's fix was necessary rather than precautionary.
+3. Does the cached checkpoint actually satisfy `HF_HUB_OFFLINE=1` on a node?
+   Untested — the next submission tests it, and will fail loudly if not.
+4. Check `squeue -u $USER` before every submission: the 28-task array leaves
+   two slots, and anything already queued eats into them.
+
+### Relation to earlier entries
+
+First entry in this file about the cluster rather than about data or models.
+It converts the first open question at the top from "nothing has been
+submitted" to a partial answer; the rows still marked **unknown** in §Evidence
+are what remains of it.
 
 ---
 

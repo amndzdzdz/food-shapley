@@ -47,8 +47,9 @@ subclass (`game.py`), the exact SV / k-SII / Möbius decomposition
 split and the Food-101 prompt set have both been downloaded and verified.
 
 **No experiment has been run and no result exists.** Week 1 tasks 1.2, 1.3,
-1.4 and 1.5 are done; 1.1 is still open on its cluster-submission step, and
-nothing has ever been submitted to a SLURM cluster. Exact Shapley values,
+1.4 and 1.5 are done; 1.1 is still open on its cluster-submission step — one
+array has reached a compute node (W01-13) but none has yet decomposed an
+image. Exact Shapley values,
 k-SII and Möbius coefficients have now been computed — on **three** images, as
 a correctness check, not as a result (W01-11, W01-12). Task 1.6's machinery
 (`run.py`, `slurm/run_array.slurm`) is written and rehearsed locally on three
@@ -122,9 +123,16 @@ player". It is still never an *ingredient*: filter on
 `PlayerSet.ingredient_indices` for every ingredient-level statistic, or the
 scene silently counts as food. See `insights/week-01.md` W01-09.
 
-The scripts in `slurm/` have been simulated locally and pass shellcheck, but
-**have never been submitted to a cluster**. Do not describe them as verified
-until someone has, and records the outcome in `insights/week-01.md`.
+`slurm/run_array.slurm` has been submitted **once** (array 225119,
+2026-10-23). It reached a node, loaded the dataset and the checkpoint, and
+failed on a config mismatch before decomposing any image; W01-13 records what
+that proved and what it did not. The toy scripts have never been run. Three
+documented assumptions were wrong — `MaxSubmit = 30` makes a 32-task array
+unsubmittable, the node has network access and the model load contacted the
+HF Hub anyway (hence `HF_HUB_OFFLINE=1`), and `slurmstepd` forces `TMPDIR`.
+**Still unverified: that a GPU is allocated and used, and the walltime.** Do
+not describe the pipeline as cluster-verified until an array has actually
+written `.npz` files.
 
 ## Cluster conventions
 
@@ -137,9 +145,12 @@ every job script; see [`slurm/README.md`](slurm/README.md) for detail.
 - `$HOME` is NFS-mounted and quota-limited. Keep caches and bulk artifacts off
   it: set `TMPDIR` to node-local scratch, and point `FOOD_SHAPLEY_RUNS` at
   persistent scratch for real runs.
-- Assume compute nodes may be offline. Anything needing the network goes in
-  `slurm/prepare.sh` on a login node; compute-node steps use
-  `uv run --frozen --no-sync`.
+- Assume compute nodes may be offline, and enforce it even where they are
+  not — `adakit` has network access (W01-13). Anything needing the network
+  goes in `slurm/prepare.sh` on a login node; compute-node steps use
+  `uv run --frozen --no-sync` and `HF_HUB_OFFLINE=1`, so a cache miss fails
+  loudly rather than re-downloading weights the provenance record then
+  misattributes.
 - Submit from the repository root; scripts `cd "${SLURM_SUBMIT_DIR:-$(pwd)}"`.
 - `set -euo pipefail` in every script, and keep preparation idempotent so a
   resubmission after a partial failure resumes instead of redoing or clobbering.

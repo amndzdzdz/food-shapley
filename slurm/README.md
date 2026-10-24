@@ -4,12 +4,15 @@ Covers [`PLAN.md`](../PLAN.md) Milestone 1, step 0 — get the submit and array
 mechanics working on a trivial job before any real experiment depends on them.
 Steps 5 and 12 scale this same pattern up.
 
-**Status: written but never submitted.** These scripts have not been run on a
-cluster. The subcommands they call are unit-tested locally, and the cluster
-settings are copied from a script known to work on this cluster, but the
-scripts themselves are unverified until someone submits them. Record the
-outcome of the first submission in
-[`insights/week-01.md`](../insights/week-01.md).
+**Status: `run_array.slurm` has been submitted once; the toy scripts have
+not.** Array 225119 on 2026-10-23 reached a compute node, loaded the dataset
+and the checkpoint, and then failed on a config mismatch before decomposing
+any image — see [`insights/week-01.md`](../insights/week-01.md) W01-13 for
+what that did and did not prove. Confirmed working: the partition, `PATH`,
+`uv run --frozen --no-sync`, the imports, the dataset, the checkpoint, and
+the array variables. **Still unverified: that a GPU is allocated and used,
+and the walltime.** `toy_job.slurm` and `toy_array.slurm` have never been
+run at all.
 
 ## Usage
 
@@ -97,6 +100,14 @@ if the cluster changes.
 
 - **Partition `-p NvidiaAll`**, no `--gres` line — the working reference script
   requests the partition alone.
+- **Job limits: `MaxSubmit = 30`, `MaxJobs = 15`, no `MaxWall`.** *Measured,
+  not assumed* — account `stud_ifi`, QOS `normal`, 2026-10-23, via
+  `sacctmgr show assoc user=$USER format=maxjobs,maxsubmit,grpjobs,grpsubmit -p`.
+  **Array tasks count individually against `MaxSubmit`**, so `--array=0-31` is
+  rejected at submission time with `AssocMaxSubmitJobLimit` and never reaches a
+  node. A `%` throttle does not help: it caps concurrency, not the submitted
+  count. Keep arrays at 28 or fewer, and subtract anything already in
+  `squeue -u $USER`.
 - **Batch jobs do not source `~/.bashrc` or `~/.zshrc`.** `uv` lives in
   `~/.local/bin` (standalone installer) and must be put on `PATH` explicitly.
   Every script does `export PATH="$HOME/.local/bin:$PATH"`.
@@ -105,9 +116,19 @@ if the cluster changes.
   `FOOD_SHAPLEY_RUNS`, `FOOD_SHAPLEY_DATA`, `UV_CACHE_DIR` and
   `UV_PROJECT_ENVIRONMENT` should point at shared scratch. See *Disk* above
   for the measured sizes.
-- **Compute nodes may be offline.** Anything needing the network happens in
-  `prepare.sh` on a login node; compute-node steps use `uv run --no-sync` so
-  they never try to resolve or download.
+- **Compute nodes may be offline — but `adakit` is not.** *Measured
+  2026-10-23:* the node has network access, and the CLIP load contacted the
+  Hugging Face Hub even though `prepare.sh` had already cached the weights
+  (W01-13). Keep the offline discipline anyway, and enforce it: anything
+  needing the network happens in `prepare.sh` on a login node, compute-node
+  steps use `uv run --no-sync`, and `run_array.slurm` sets `HF_HUB_OFFLINE=1`
+  so a cache miss fails loudly instead of silently re-downloading weights
+  that the provenance record then misattributes.
+- **`slurmstepd` sets `TMPDIR` itself.** On `adakit` it fails to create
+  `/tmp/user/<uid>` and falls back to `/tmp`, so the scripts'
+  `export TMPDIR="${TMPDIR:-...}"` never fires. Nothing depends on it:
+  `_atomic_save` writes its temporary file into the output directory, so the
+  rename stays on one filesystem.
 - **Scripts are submitted from the repository root**, and use
   `cd "${SLURM_SUBMIT_DIR:-$(pwd)}"`.
 - **Preparation is idempotent**, so a resubmission after a partial failure
@@ -126,8 +147,10 @@ reference layout otherwise. Rename if cross-project consistency matters more.
 
 - Point `FOOD_SHAPLEY_RUNS` at persistent scratch, not the repo.
 - Set a realistic `-t` walltime; the toy jobs use 15 minutes.
-- Consider throttling concurrency with `--array=0-7117%N` if the partition
-  requires it.
+- **Do not size the array to the split.** `--array=0-7117` cannot be submitted
+  here at all (`MaxSubmit = 30`), and it is not needed: `run.py` divides the
+  images among however many tasks exist, so the array size is a throughput
+  choice that changes no stored number. `run_array.slurm` uses `0-27`.
 - Keep one output file per image, so a partial failure is re-runnable per task.
 - Re-run `verify` (or its successor) after every array; an array that silently
   drops 3 % of its tasks looks exactly like one that succeeded.
